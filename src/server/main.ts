@@ -1,10 +1,12 @@
 import express from "express";
 import ViteExpress from "vite-express";
+import scryfallDownload from "./helper/scryfall-download.js";
 
 const app = express();
 
-app.get("/hello", (_, res) => {
-  res.send("Hello Vite + React + TypeScript!");
+app.get("/download", (_, res) => {
+  scryfallDownload()
+  res.sendStatus(200);
 });
 
 ViteExpress.listen(app, 3000, () =>
