@@ -18,14 +18,14 @@ model Card {
   id       String     @id
   name     String
   faces    CardFace[]
-  imageUrl String
+  imageUrl String?
   decks    Deck[]
 }
 
 model CardFace {
   cardId   String
   name     String
-  imageUrl String
+  imageUrl String?
   card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@id([cardId, name])
