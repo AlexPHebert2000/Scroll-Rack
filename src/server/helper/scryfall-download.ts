@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { PrismaClient } from '../../../generated/prisma/index.js';
+import { create } from 'domain';
 
 const CHUNK_SIZE = 1000;
 
@@ -26,7 +27,15 @@ export default async () => {
         prisma.card.upsert({
           where: { id: card.id },
           update:{},
-          create: {
+          create: card.card_faces ? {
+            id: card.id,
+            name: card.name,
+            imageUrl: card.image_uris?.normal || null,
+            faces: {create: card.card_faces.map(face => ({
+              name: face.name,
+              imageUrl: face.image_uris?.normal || null
+            }))},
+          } : {
             id: card.id,
             name: card.name,
             imageUrl: card.image_uris?.normal || null,
