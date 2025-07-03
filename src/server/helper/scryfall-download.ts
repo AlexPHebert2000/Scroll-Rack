@@ -11,7 +11,7 @@ export default async () => {
   const prisma = new PrismaClient();
   
   const {data} = await axios.get('https://api.scryfall.com/bulk-data')
-  const bulkData = (await axios.get(data.data[0].download_uri)).data.filter(card => card.layout !== 'art_series' && card.layout !== 'token');
+  const bulkData = (await axios.get(data.data[0].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
   
   await prisma.card.deleteMany({}); // Clear the card table before uploading new data
   
@@ -23,7 +23,7 @@ export default async () => {
     console.time(`Chunk ${i / CHUNK_SIZE + 1} upload time`);
 
     await Promise.allSettled(
-      chunk.map(card => 
+      chunk.map((card:any)=> 
         prisma.card.upsert({
           where: { id: card.id },
           update:{},
@@ -31,7 +31,7 @@ export default async () => {
             id: card.id,
             name: card.name,
             imageUrl: card.image_uris?.normal || null,
-            faces: {create: card.card_faces.map(face => ({
+            faces: {create: card.card_faces.map((face:any) => ({
               name: face.name,
               imageUrl: face.image_uris?.normal || null
             }))},
