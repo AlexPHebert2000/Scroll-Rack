@@ -20,13 +20,14 @@ model Card {
   faces    CardFace[]
   imageUrl String?
   decks    Deck[]
+  Change   Change[] // Changes related to this card in the context of branches and commits
 }
 
 model CardFace {
   cardId   String
   name     String
   imageUrl String?
-  card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@id([cardId, name])
 }
@@ -38,20 +39,55 @@ model User {
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  decks     Deck[]
+  decks     Deck[] // A user can have multiple decks
 
   @@index([email]) // Index for reduced redundancy. Unique constraint generates an index automatically.
 }
 
 model Deck {
-  id        String   @id
-  name      String
-  userId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id
+  name        String
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  description String?
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cards Card[]
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade) // A deck belongs to a user
+  cards Card[] // A deck can have multiple cards
+
+  branches Branch[] // A deck can have multiple branches for version control
 
   @@index([userId])
+}
+
+model Branch {
+  id           String   @id
+  name         String
+  deckId       String
+  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
+  commits      Commit[] // A branch can have multiple commits
+  headCommitId String // A branch has a head commit for the latest state
+}
+
+model Commit {
+  id          String
+  description String
+  createdAt   DateTime @default(now())
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade) // A commit belongs to a branch
+  changes     Change[]  // A commit can have multiple changes
+
+  @@id([id, branchId])
+}
+
+model Change {
+  id             String
+  action         String // e.g., "add", "remove", "update"
+  commitId       String
+  commitBranchId String
+  commit         Commit @relation(fields: [commitId, commitBranchId], references: [id, branchId], onDelete: Cascade) // A change belongs to a commit
+  cardId         String
+  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade) // A card is involved in the change
+
+  @@id([id, commitId])
 }
