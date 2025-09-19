@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { PrismaClient } from '../../../generated/prisma/index.js';
 import bcrypt from 'bcrypt';
+import { randomUUID } from "crypto";
 
 const userRouter = Router();
 
@@ -33,6 +34,32 @@ userRouter.post("/", async (req : Request, res : Response) => {
     else{
       res.sendStatus(500);
     }
+  }
+  finally{
+    await prisma.$disconnect();
+  }
+})
+
+userRouter.post("/login", async (req : Request, res : Response) => {
+  const {email, password} = req.body;
+  const prisma = new PrismaClient();
+  try {
+    const user = await prisma.user.findUnique({where: {email}});
+    if (!user){throw new Error("User not found")}
+    if (await bcrypt.compare(password, user.password)){
+      console.log(`USER ${user.email} LOGIN`);
+      res.cookie("scroll-rack-session", randomUUID(),{
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict"
+      })
+    }
+    else { throw new Error("Incorrect Password")}
+    res.sendStatus(200);
+  }
+  catch(e){
+    console.log(e.message);
+    res.sendStatus(e.message === "User not found" || e.message === "Incorrect Password" ? 401 : 500);
   }
   finally{
     await prisma.$disconnect();
