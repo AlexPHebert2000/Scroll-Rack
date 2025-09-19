@@ -1,4 +1,4 @@
-import e, { Router } from "express";
+import { Router } from "express";
 import axios from "axios";
 import type { Request, Response } from "express";
 import { PrismaClient } from '../../../generated/prisma/index.js';
