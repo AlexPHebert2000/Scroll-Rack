@@ -1,13 +1,14 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { PrismaClient } from '../../../generated/prisma/index.js';
-import { createHash } from "node:crypto";
+import bcrypt from 'bcrypt';
 
 const userRouter = Router();
 
 userRouter.post("/", async (req : Request, res : Response) => {
   const prisma = new PrismaClient()
   const {name, email, password} = req.body;
+
   try{
 
     // Check for existing user using the given email
@@ -18,7 +19,7 @@ userRouter.post("/", async (req : Request, res : Response) => {
       data:{
         email,
         name,
-        password,
+        password : await bcrypt.hash(password, 10)
       }
     });
     
