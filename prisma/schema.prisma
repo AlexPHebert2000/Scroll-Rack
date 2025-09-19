@@ -33,34 +33,42 @@ model CardFace {
 }
 
 model User {
+  email     String    @id @unique
   name      String
-  email     String   @unique @id
   password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   decks     Deck[] // A user can have multiple decks
+  sessions  Session[] // A user can have multiple sessions
+}
 
-  @@index([email]) // Index for reduced redundancy. Unique constraint generates an index automatically.
+model Session {
+  id        String   @id
+  user      User     @relation(fields: [userEmail], references: [email])
+  userEmail String
+  createdAt DateTime @default(now())
+  lastSeen  DateTime @default(now())
+  expires   DateTime
 }
 
 model Deck {
   id          String   @id
   name        String
-  userId      String
+  userEmail   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   description String?
 
-  user  User   @relation(fields: [userId], references: [email], onDelete: Cascade) // A deck belongs to a user
+  user  User   @relation(fields: [userEmail], references: [email], onDelete: Cascade) // A deck belongs to a user
   cards Card[] // A deck can have multiple cards
 
   branches Branch[] // A deck can have multiple branches for version control
 
-  @@index([userId])
+  @@index([userEmail])
 }
 
 model Branch {
-  id           String   @id 
+  id           String   @id
   name         String   @default("main")
   deckId       String
   deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
