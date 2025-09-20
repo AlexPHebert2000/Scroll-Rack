@@ -42,6 +42,40 @@ deckRouter.post("/", async (req : Request, res : Response) => {
     await prisma.$disconnect();
     console.log("Deck upload done");
   }
-})
+});
+
+deckRouter.get("/:id/:branch", async (req : Request, res : Response) => {
+  const {id, branch} = req.params;
+  const prisma = new PrismaClient();
+  try{
+    const deck = await prisma.deck.findUniqueOrThrow({
+      where: {id},
+      include: {
+        branches: {
+          where: {
+            id: branch
+          },
+          include:{
+            cards: true
+          }
+        }
+      }
+    });
+    res.send(deck);
+  }
+  catch(e){
+    if(e.name === "PrismaClientKnownRequestError"){
+      console.log(`${e.meta.cause} : ${id}`);
+      res.sendStatus(404);
+    }
+    else{
+      console.log(e.message)
+      res.sendStatus(500);
+    }
+  }
+  finally{
+    await prisma.$disconnect()
+  }
+});
 
 export default deckRouter;
