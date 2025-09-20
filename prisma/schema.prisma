@@ -34,12 +34,15 @@ model CardFace {
 
 model User {
   email     String    @id @unique
+  username  String    @unique
   name      String
   password  String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   decks     Deck[] // A user can have multiple decks
   sessions  Session[] // A user can have multiple sessions
+
+  @@index([username])
 }
 
 model Session {
@@ -60,8 +63,6 @@ model Deck {
   description String?
   user        User     @relation(fields: [userEmail], references: [email], onDelete: Cascade) // A deck belongs to a user
   branches Branch[] // A deck can have multiple branches for version control
-
-  @@index([userEmail])
 }
 
 model Branch {
