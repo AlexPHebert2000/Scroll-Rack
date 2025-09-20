@@ -8,16 +8,17 @@ const userRouter = Router();
 
 userRouter.post("/", async (req : Request, res : Response) => {
   const prisma = new PrismaClient()
-  const {name, email, password} = req.body;
+  const {name, email, username, password} = req.body;
 
   try{
 
     // Check for existing user using the given email
-    const exsistingUser = await prisma.user.findUnique({where:{ email }});
+    let exsistingUser = await prisma.user.findUnique({where:{email}}) || await prisma.user.findUnique({where:{username}});
     if (exsistingUser){throw new Error("User Exists")}
     
     const user = await prisma.user.create({
       data:{
+        username,
         email,
         name,
         password : await bcrypt.hash(password, 10)
