@@ -40,6 +40,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   }
   finally{
     await prisma.$disconnect();
+    console.log("Deck upload done");
   }
 })
 
