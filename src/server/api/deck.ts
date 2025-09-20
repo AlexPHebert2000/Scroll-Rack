@@ -78,4 +78,53 @@ deckRouter.get("/:id/:branch", async (req : Request, res : Response) => {
   }
 });
 
+
+deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
+  const {id, branch} = req.params;
+  const {changes, description, decklist} : {changes : {action: string, cardId: string}[], description : string, decklist : string[]}= req.body;
+  const prisma = new PrismaClient();
+  
+  try{
+    // Check for deck + branch in db
+    await prisma.deck.findFirstOrThrow({
+      where:{
+        id
+      },
+      include:{
+        branches:{
+          where:{
+            id: branch
+          }
+        }
+      }
+    });
+
+    //update branch with new decklist and commit
+    await prisma.branch.update({
+      where: {id},
+      data: {
+        commits: {create: {
+          id: createHash('sha1').update(Date.now() + id).digest('hex').toString().slice(0, 6),
+          description,
+          changes: {
+            create: changes.map(({action, cardId}, index) => ({
+              id: index,
+              action,
+              card: {connect: {id: cardId}}
+            }))
+          }
+        }},
+        cards: {connect: decklist.map(id => ({id}))}
+      }
+    });
+    res.sendStatus(201);
+  }
+  catch(e){
+    console.log(e.message);
+  }
+  finally{
+    await prisma.$disconnect();
+  }
+});
+
 export default deckRouter;
