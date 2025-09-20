@@ -48,6 +48,16 @@ userRouter.post("/login", async (req : Request, res : Response) => {
     if (!user){throw new Error("User not found")}
     if (await bcrypt.compare(password, user.password)){
       console.log(`USER ${user.email} LOGIN`);
+      const cookieId = randomUUID();
+      const expires = new Date(Date.now());
+      expires.setDate(expires.getDate() + 7); // Cookie Expires in 7 days
+      await prisma.session.create({
+        data: {
+          id: cookieId,
+          user: {connect: {email}},
+          expires
+        }
+      })
       res.cookie("scroll-rack-session", randomUUID(),{
         httpOnly: true,
         secure: true,
