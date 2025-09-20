@@ -86,7 +86,7 @@ model Commit {
 }
 
 model Change {
-  id             String
+  id             Int
   action         String // e.g., "add", "remove", "update"
   commitId       String
   commitBranchId String
