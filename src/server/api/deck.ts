@@ -121,6 +121,12 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
   }
   catch(e){
     console.log(e.message);
+    if (e.code === "P2025"){
+      res.sendStatus(404);
+    }
+    else{
+      res.sendStatus(500)
+    }
   }
   finally{
     await prisma.$disconnect();
