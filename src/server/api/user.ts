@@ -77,4 +77,32 @@ userRouter.post("/login", async (req : Request, res : Response) => {
   }
 })
 
+userRouter.get("/profile/:username", async (req : Request, res : Response) => {
+  const {username} = req.params;
+  const prisma = new PrismaClient();
+  try {
+    const profile = await prisma.user.findFirstOrThrow({
+      where:{ username },
+      omit:{
+        password: true,
+        updatedAt: true,
+      },
+      include: {
+        decks: {select:{
+          name: true,
+          id: true
+        }}
+      }
+    });
+    res.send(profile);
+  }
+  catch(e){
+    console.log(e.message);
+    res.sendStatus(500);
+  }
+  finally{
+    await prisma.$disconnect()
+  }
+})
+
 export default userRouter;
