@@ -13,8 +13,11 @@ userRouter.post("/", async (req : Request, res : Response) => {
   try{
 
     // Check for existing user using the given email
-    let exsistingUser = await prisma.user.findUnique({where:{email}}) || await prisma.user.findUnique({where:{username}});
-    if (exsistingUser){throw new Error("User Exists")}
+    let exsistingUser = await prisma.user.findUnique({where:{email}});
+    if (exsistingUser){throw new Error("Email Exists")}
+
+    await prisma.user.findUnique({where:{username}})
+    if (exsistingUser){throw new Error("Username Exists")}
     
     const user = await prisma.user.create({
       data:{
@@ -28,12 +31,16 @@ userRouter.post("/", async (req : Request, res : Response) => {
     res.sendStatus(201);
   }
   catch(e){
-    console.log(e.message);
-    if (e.message == "User Exists"){
-      res.sendStatus(409);
+    
+    console.log(`Error creating user : ${e.message}`);
+    if (e.message == "Username Exists"){
+      res.status(409).json({error: `Failed to create user: Username ${username} already exists`});
+    }
+    if (e.message == "Email Exists"){
+      res.status(409).json({error: `Failed to create user: Email ${email} already exists`});
     }
     else{
-      res.sendStatus(500);
+      res.status(500).json({error : "Failed to create user"});
     }
   }
   finally{
@@ -69,7 +76,7 @@ userRouter.post("/login", async (req : Request, res : Response) => {
     res.sendStatus(200);
   }
   catch(e){
-    console.log(e.message);
+    console.log(`Failed to log in user : ${e.message}`);
     res.sendStatus(e.message === "User not found" || e.message === "Incorrect Password" ? 401 : 500);
   }
   finally{
@@ -97,8 +104,11 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
     res.send(profile);
   }
   catch(e){
-    console.log(e.message);
-    res.sendStatus(500);
+    console.log(`Failed to get ${username} profile : ${e.message}`);
+    if (e.code === 'P2025'){
+      res.status(404).json({error : `User ${username} not found`})
+    }
+    res.status(500).json({error : `Failed to get ${username} profile`});
   }
   finally{
     await prisma.$disconnect()

@@ -18,7 +18,7 @@ scryfallRouter.get("/search", async (req :Request , res :Response) => {
   }
 
   catch (error) {
-    console.error("Error fetching data from Scryfall:", error);
+    console.error("Error fetching data from Scryfall:", error.message);
     res.status(500).json({ error: "Failed to fetch data from Scryfall" });
   }
   

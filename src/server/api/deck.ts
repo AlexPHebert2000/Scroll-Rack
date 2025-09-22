@@ -35,8 +35,8 @@ deckRouter.post("/", async (req : Request, res : Response) => {
     res.sendStatus(201);
   }
   catch(e){
-    res.sendStatus(500);
-    console.log(e.message);
+    console.log(`Failed to create deck : ${e.message}`);
+    res.status(500).json({error: "Failed to create deck"});
   }
   finally{
     await prisma.$disconnect();
@@ -69,8 +69,8 @@ deckRouter.get("/:id/:branch", async (req : Request, res : Response) => {
       res.sendStatus(404);
     }
     else{
-      console.log(e.message)
-      res.sendStatus(500);
+      console.log(`Failed to get deck branch : ${e.message}`)
+      res.status(500).json({error: "Failed to get deck branch"});
     }
   }
   finally{
@@ -120,12 +120,12 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
     res.sendStatus(201);
   }
   catch(e){
-    console.log(e.message);
+    console.log(`Failed to upload deck update : ${e.message}`);
     if (e.code === "P2025"){
-      res.sendStatus(404);
+      res.status(404).json({error: "Deck not found"});
     }
     else{
-      res.sendStatus(500)
+      res.status(500).json({error: "Failed to upload deck update"})
     }
   }
   finally{
