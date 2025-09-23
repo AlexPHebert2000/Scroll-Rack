@@ -66,7 +66,7 @@ userRouter.post("/login", async (req : Request, res : Response) => {
           expires
         }
       })
-      res.cookie("scroll-rack-session", randomUUID(),{
+      res.cookie("scroll-rack-session", cookieId,{
         httpOnly: true,
         secure: true,
         sameSite: "strict"
