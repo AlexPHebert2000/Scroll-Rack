@@ -3,6 +3,8 @@ import Box from '@mui/material/Box'
 import {Routes, Route} from 'react-router-dom';
 import type { ReactElement } from "react";
 
+import Login from "./components/Login";
+
 function App() :ReactElement {
   return (
     <>
@@ -19,6 +21,10 @@ function App() :ReactElement {
 }
 
 const routes : {path: string, element: ReactElement}[] = [
+  {
+    path: "/login",
+    element: <Login />
+  }
 ]
 
 export default App;
