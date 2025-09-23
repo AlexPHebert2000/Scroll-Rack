@@ -1,7 +1,8 @@
 import axios from 'axios';
+import type { Card } from '../../../generated/prisma/client.js';
 import { PrismaClient } from '../../../generated/prisma/client.js';
 
-const CHUNK_SIZE = 1000;
+const CHUNK_SIZE = 500;
 
 export default async () => {
   console.log("Starting card download ... Please Wait")
@@ -14,8 +15,8 @@ export default async () => {
   const bulkData = (await axios.get(data.data[0].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
    
   console.log("Retrieved Cards")
-  await prisma.card.deleteMany({}); // Clear the card table before uploading new data
-  console.log("Cleared DB")
+  //await prisma.card.deleteMany({}); // Clear the card table before uploading new data
+  //console.log("Cleared DB")
   
   console.log(`Uploading ${bulkData.length} cards to the database...`);
   
@@ -23,7 +24,7 @@ export default async () => {
     const chunk = bulkData.slice(i, i + CHUNK_SIZE);
     console.log(`Uploading cards ${i + 1} to ${Math.min(i + CHUNK_SIZE, bulkData.length)}...`);
 
-    await Promise.allSettled(
+    const uploads = await Promise.allSettled(
       chunk.map((card:any)=> 
         prisma.card.upsert({
           where: { id: card.id },
@@ -45,6 +46,9 @@ export default async () => {
         })
       )
     )
+    const results = uploads.reduce((acc: {fulfilled : number, rejected: number}, cur : PromiseSettledResult<Card>) => {acc[cur.status] += 1; return acc}, {fulfilled : 0, rejected: 0})
+    console.log(uploads.filter((val) => val.status === 'rejected')[0])
+    console.log(`Upload batch ${i + 1} to ${Math.min(i + CHUNK_SIZE, bulkData.length)} results : fulfilled: ${results.fulfilled}, rejected: ${results.rejected}`);
   }
 
   console.timeEnd('Upload time');
