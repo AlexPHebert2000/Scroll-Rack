@@ -1,5 +1,8 @@
 import React, {useState} from 'react';
 import type { ReactElement } from 'react';
+import axios from 'axios';
+import Cookie from 'js-cookie';
+import { useNavigate } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import FormControl from '@mui/material/FormControl';
@@ -13,12 +16,26 @@ const Login = () :ReactElement => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const navigate = useNavigate()
+
   const handleInputChange = ( e : React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, setState : React.Dispatch<React.SetStateAction<string>> ) => {
     setState(e.target.value)
   }
 
-  const handleSumbit = () => {
-    console.log("Login!")
+  const handleSumbit = async () => {
+    try{
+      await axios.post('/api/user/login', {email, password});
+      const sessionCookie = Cookie.get("scroll-rack-session");
+      if (sessionCookie) {
+        navigate("/")
+      }
+      else{
+        throw new Error("Login Failed")
+      }
+    }
+    catch(e){
+      console.error(e.response.data);
+    }
   }
 
   return (
