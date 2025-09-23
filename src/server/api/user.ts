@@ -66,11 +66,7 @@ userRouter.post("/login", async (req : Request, res : Response) => {
           expires
         }
       })
-      res.cookie("scroll-rack-session", cookieId,{
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict"
-      })
+      res.cookie("scroll-rack-session", cookieId)
     }
     else { throw new Error("Incorrect Password")}
     res.sendStatus(200);
