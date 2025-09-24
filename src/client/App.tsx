@@ -4,6 +4,7 @@ import {Routes, Route} from 'react-router-dom';
 import type { ReactElement } from "react";
 
 import Login from "./components/Login";
+import Home from "./components/Home";
 
 function App() :ReactElement {
   return (
@@ -24,6 +25,10 @@ const routes : {path: string, element: ReactElement}[] = [
   {
     path: "/login",
     element: <Login />
+  },
+  {
+    path: "/",
+    element: <Home />
   }
 ]
 
