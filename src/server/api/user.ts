@@ -111,4 +111,35 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
   }
 })
 
+userRouter.get("/session/:id", async (req: Request, res: Response) => {
+  const {id} = req.params
+  const prisma = new PrismaClient();
+  try {
+    const user = await prisma.session.findUniqueOrThrow({
+      where: {id},
+      include: {
+        user: {
+          select: {
+            username: true,
+            decks: {
+              select:{
+                name: true,
+                id: true,
+              }
+            }
+          }
+        }
+      }
+    })
+    res.send(user);
+  }
+  catch(e){
+    console.log(`Failed to find user from session : ${e.message}`);
+    res.sendStatus(500);
+  }
+  finally{
+    await prisma.$disconnect();
+  }
+})
+
 export default userRouter;
