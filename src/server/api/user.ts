@@ -117,7 +117,8 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
   try {
     const user = await prisma.session.findUniqueOrThrow({
       where: {id},
-      include: {
+      select: {
+        id : true,
         user: {
           select: {
             username: true,
@@ -125,6 +126,14 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
               select:{
                 name: true,
                 id: true,
+                branches:{
+                  where: {
+                    name: 'main'
+                  },
+                  select:{
+                    id: true
+                  }
+                }
               }
             }
           }
