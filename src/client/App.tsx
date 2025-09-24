@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 
 import Login from "./components/Login";
 import Home from "./components/Home";
+import Decklist from "./components/Decklist";
 
 function App() :ReactElement {
   return (
@@ -29,6 +30,10 @@ const routes : {path: string, element: ReactElement}[] = [
   {
     path: "/",
     element: <Home />
+  },
+  {
+    path: "/deck",
+    element: <Decklist />
   }
 ]
 
