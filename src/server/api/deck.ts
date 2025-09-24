@@ -8,7 +8,7 @@ const deckRouter = Router();
 deckRouter.post("/", async (req : Request, res : Response) => {
   const prisma = new PrismaClient();
   const {name, userId, description} = req.body;
-  const commitHash = randomBytes(8).toString("base64url");
+  const commitHash = randomBytes(4).toString("base64url");
   try {
     console.log("Deck upload in progress");
     const deckUpload = await prisma.deck.create({
@@ -19,7 +19,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
         description: description ? description : null,
 
         branches: {create: {
-          id : createHash('sha1').update(Date.now() + userId).digest('hex').toString(),
+          id : randomBytes(4).toString("base64url"),
           headCommitId: commitHash,
 
           commits: {create: {
@@ -104,7 +104,7 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
       where: {id},
       data: {
         commits: {create: {
-          id: createHash('sha1').update(Date.now() + id).digest('hex').toString().slice(0, 6),
+          id: randomBytes(4).toString("base64url"),
           description,
           changes: {
             create: changes.map(({action, cardId}, index) => ({
