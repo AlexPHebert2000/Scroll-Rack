@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -17,10 +11,10 @@ datasource db {
 model Card {
   id       String     @id
   name     String
-  faces    CardFace[]
   imageUrl String?
-  decks    Deck[]
-  Change   Change[] // Changes related to this card in the context of branches and commits
+  faces    CardFace[]
+  Change   Change[]
+  decks    Deck[]     @relation("CardToDeck")
 }
 
 model CardFace {
@@ -35,13 +29,13 @@ model CardFace {
 model User {
   name      String
   username  String
-  email     String   @unique @id
+  email     String   @id @unique
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  decks     Deck[] // A user can have multiple decks
+  decks     Deck[]
 
-  @@index([email]) // Index for reduced redundancy. Unique constraint generates an index automatically.
+  @@index([email])
 }
 
 model Deck {
@@ -51,11 +45,9 @@ model Deck {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   description String?
-
-  user  User   @relation(fields: [userId], references: [email], onDelete: Cascade) // A deck belongs to a user
-  cards Card[] // A deck can have multiple cards
-
-  branches Branch[] // A deck can have multiple branches for version control
+  branches    Branch[]
+  user        User     @relation(fields: [userId], references: [email], onDelete: Cascade)
+  cards       Card[]   @relation("CardToDeck")
 
   @@index([userId])
 }
@@ -64,9 +56,9 @@ model Branch {
   id           String   @id
   name         String
   deckId       String
-  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
-  commits      Commit[] // A branch can have multiple commits
-  headCommitId String // A branch has a head commit for the latest state
+  headCommitId String
+  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  commits      Commit[]
 }
 
 model Commit {
@@ -74,20 +66,20 @@ model Commit {
   description String
   createdAt   DateTime @default(now())
   branchId    String
-  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade) // A commit belongs to a branch
-  changes     Change[]  // A commit can have multiple changes
+  changes     Change[]
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@id([id, branchId])
 }
 
 model Change {
   id             String
-  action         String // e.g., "add", "remove", "update"
+  action         String
   commitId       String
   commitBranchId String
-  commit         Commit @relation(fields: [commitId, commitBranchId], references: [id, branchId], onDelete: Cascade) // A change belongs to a commit
   cardId         String
-  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade) // A card is involved in the change
+  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  commit         Commit @relation(fields: [commitId, commitBranchId], references: [id, branchId], onDelete: Cascade)
 
   @@id([id, commitId])
 }
