@@ -34,6 +34,7 @@ model CardFace {
 
 model User {
   name      String
+  username  String
   email     String   @unique @id
   password  String
   createdAt DateTime @default(now())
