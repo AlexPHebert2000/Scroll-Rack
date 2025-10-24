@@ -14,8 +14,8 @@ export default async () => {
   const bulkData = (await axios.get(data.data[2].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
    
   console.log("Retrieved Cards")
-  await prisma.card.deleteMany({}); // Clear the card table before uploading new data
-  console.log("Cleared DB")
+  //await prisma.card.deleteMany({}); // Clear the card table before uploading new data
+  //console.log("Cleared DB")
   
   console.log(`Uploading ${bulkData.length} cards to the database...`);
   
