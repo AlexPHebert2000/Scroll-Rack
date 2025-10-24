@@ -33,9 +33,8 @@ model CardFace {
 }
 
 model User {
-  id        String   @id
   name      String
-  email     String   @unique
+  email     String   @unique @id
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -52,7 +51,7 @@ model Deck {
   updatedAt   DateTime @updatedAt
   description String?
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade) // A deck belongs to a user
+  user  User   @relation(fields: [userId], references: [email], onDelete: Cascade) // A deck belongs to a user
   cards Card[] // A deck can have multiple cards
 
   branches Branch[] // A deck can have multiple branches for version control
