@@ -1,0 +1,4 @@
+# Scroll Rack
+## A Magic the Gathering Deckbulilder with built in version management!
+
+Scroll Rack is (or will be) a fully featured MTG deckbuilding platform with a feauture not found among the other popular deck building sites — version control. As a computer scientist, I am very familiar with git and its benifeits and this is something I think would be super helpful in deckbuilding. One of my pet decks [Jodah's Humans of the Muliverse](https://moxfield.com/decks/YGFa45mTqkCfr5HLte6wZQ) has gone through many itterations, changing commanders, subthemes, mana curve, and everything in between to various levels of success. One of the worst part of this itterative deck building process is the work to try and revert the deck to its previous build! This is where I got the idea to use git in the deckbuilding process, but the only way to do this would be to export the text and manage the repository locally and upload versions which is not viable.
