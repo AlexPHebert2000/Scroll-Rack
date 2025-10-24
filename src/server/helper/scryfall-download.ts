@@ -11,7 +11,7 @@ export default async () => {
   const prisma = new PrismaClient();
   
   const {data} = await axios.get('https://api.scryfall.com/bulk-data')
-  const bulkData = (await axios.get(data.data[0].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
+  const bulkData = (await axios.get(data.data[2].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
    
   console.log("Retrieved Cards")
   await prisma.card.deleteMany({}); // Clear the card table before uploading new data
