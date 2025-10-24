@@ -8,7 +8,7 @@ type DeckCreateRequest = {
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { PrismaClient } from '../../../generated/prisma/index.js';
-import { getHashes, createHash } from "crypto";
+import { createHash } from "crypto";
 
 const deckRouter = Router();
 
