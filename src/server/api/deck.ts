@@ -1,32 +1,25 @@
-type DeckCreateRequest = {
-  name: string;
-  description: string;
-  cards: string[]; // Array of card IDs
-  ownerId: string; // ID of the user creating the deck
-}
-
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { PrismaClient } from '../../../generated/prisma/index.js';
-import { createHash } from "crypto";
+import shortId from '../helper/shortId.js';
 
 const deckRouter = Router();
 
 deckRouter.post("/", async (req : Request, res : Response) => {
   const prisma = new PrismaClient();
   const {name, userId, description} = req.body;
-  const commitHash = createHash('sha1').update(Date.now() + userId).digest('hex').toString()
+  const commitHash = shortId()
   try {
     console.log("Deck upload in progress");
     await prisma.deck.create({
       data:{
-        id: createHash('sha1').update(Date.now() + userId).digest('hex').toString(),
+        id: shortId(),
         name,
         user: {connect : {email: userId}},
         description: description ? description : null,
 
         branches: {create: {
-          id : createHash('sha1').update(Date.now() + userId).digest('hex').toString(),
+          id :shortId(),
           headCommitId: commitHash,
           name: "main",
           commits: {create: {
