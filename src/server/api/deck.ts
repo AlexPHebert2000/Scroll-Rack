@@ -15,11 +15,10 @@ const deckRouter = Router();
 deckRouter.post("/", async (req : Request, res : Response) => {
   const prisma = new PrismaClient();
   const {name, userId, description} = req.body;
-  const hash = getHashes();
   const commitHash = createHash('sha1').update(Date.now() + userId).digest('hex').toString()
   try {
     console.log("Deck upload in progress");
-    const deckUpload = await prisma.deck.create({
+    await prisma.deck.create({
       data:{
         id: createHash('sha1').update(Date.now() + userId).digest('hex').toString(),
         name,
@@ -29,7 +28,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
         branches: {create: {
           id : createHash('sha1').update(Date.now() + userId).digest('hex').toString(),
           headCommitId: commitHash,
-
+          name: "main",
           commits: {create: {
             id: commitHash,
             description: "INIT",
