@@ -10,7 +10,6 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   const {name, userId, description} = req.body;
   const commitHash = shortId()
   try {
-    console.log("Deck upload in progress");
     await prisma.deck.create({
       data:{
         id: shortId(),
