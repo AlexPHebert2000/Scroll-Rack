@@ -40,6 +40,37 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   finally{
     await prisma.$disconnect();
   }
-})
+});
+
+deckRouter.get("/:id", async (req: Request, res: Response) => {
+  const prisma = new PrismaClient();
+  const {id} = req.params;
+  try{
+    const deck = await prisma.deck.findUniqueOrThrow({
+      where: {id},
+      include: {
+        cards: true,
+        branches: {
+          where: {name: "main"},
+          include: {
+            commits: true
+          }
+        }
+      }
+    });
+    res.json(deck);
+  }
+  catch(e){
+    if (e.code === 'P2025'){
+      res.status(404).json({error: "deck not found"})
+    }
+    else {
+      res.sendStatus(500);
+    }
+  }
+  finally{
+    await prisma.$disconnect();
+  }
+});
 
 export default deckRouter;
