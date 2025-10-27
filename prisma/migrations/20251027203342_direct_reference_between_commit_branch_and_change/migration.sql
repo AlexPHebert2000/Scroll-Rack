@@ -36,6 +36,7 @@ CREATE TABLE "Deck" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "description" TEXT,
+    "defaultBranchId" TEXT NOT NULL,
 
     CONSTRAINT "Deck_pkey" PRIMARY KEY ("id")
 );
@@ -86,7 +87,19 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_email_idx" ON "User"("email");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Deck_defaultBranchId_key" ON "Deck"("defaultBranchId");
+
+-- CreateIndex
 CREATE INDEX "Deck_userId_idx" ON "Deck"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Branch_id_key" ON "Branch"("id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Branch_headCommitId_key" ON "Branch"("headCommitId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Commit_id_key" ON "Commit"("id");
 
 -- CreateIndex
 CREATE INDEX "_CardToDeck_B_index" ON "_CardToDeck"("B");
@@ -95,7 +108,13 @@ CREATE INDEX "_CardToDeck_B_index" ON "_CardToDeck"("B");
 ALTER TABLE "CardFace" ADD CONSTRAINT "CardFace_cardId_fkey" FOREIGN KEY ("cardId") REFERENCES "Card"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Deck" ADD CONSTRAINT "Deck_defaultBranchId_fkey" FOREIGN KEY ("defaultBranchId") REFERENCES "Branch"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Deck" ADD CONSTRAINT "Deck_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("email") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Branch" ADD CONSTRAINT "Branch_headCommitId_fkey" FOREIGN KEY ("headCommitId") REFERENCES "Commit"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Branch" ADD CONSTRAINT "Branch_deckId_fkey" FOREIGN KEY ("deckId") REFERENCES "Deck"("id") ON DELETE CASCADE ON UPDATE CASCADE;

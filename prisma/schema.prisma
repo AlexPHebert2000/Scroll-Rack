@@ -45,7 +45,9 @@ model Deck {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   description String?
-  branches    Branch[]
+  defaultBranch Branch @relation(fields: [defaultBranchId], references: [id], name: "defaultBranch")
+  defaultBranchId String @unique
+  branches    Branch[] @relation(name: "branches")
   user        User     @relation(fields: [userId], references: [email], onDelete: Cascade)
   cards       Card[]   @relation("CardToDeck")
 
@@ -53,20 +55,23 @@ model Deck {
 }
 
 model Branch {
-  id           String   @id
+  id           String   @id @unique
   name         String
+  defaultBranchOf Deck? @relation(name: "defaultBranch")
   deckId       String
-  headCommitId String
-  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  headCommitId String @unique
+  headCommit Commit @relation(fields: [headCommitId], references: [id], name: "HEAD")
+  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade, name: "branches")
   commits      Commit[]
 }
 
 model Commit {
-  id          String
+  id          String @unique
   description String
   createdAt   DateTime @default(now())
   branchId    String
   changes     Change[]
+  headBranchOf Branch? @relation(name: "HEAD")
   branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@id([id, branchId])
