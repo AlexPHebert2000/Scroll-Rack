@@ -3,14 +3,14 @@
 ## MVP
 
 ### Database
-- [ ] Card schema
-- [ ] Bulk Card download
-- [ ] Card lookup
+- [X] Card schema
+- [X] Bulk Card download
+- [X] Card lookup
 
 ### Deckbuilding
-- [ ] Deck schema
-- [ ] Create Deck
-- [ ] Get Deck
+- [X] Deck schema
+- [X] Create Deck
+- [X] Get Deck
 - [ ] Change Deck Title
 - [ ] Change Deck Description
 - [ ] Add Card to Deck

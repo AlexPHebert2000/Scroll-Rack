@@ -39,40 +39,40 @@ model User {
 }
 
 model Deck {
-  id          String   @id
-  name        String
-  userId      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  description String?
-  defaultBranch Branch @relation(fields: [defaultBranchId], references: [id], name: "defaultBranch")
-  defaultBranchId String @unique
-  branches    Branch[] @relation(name: "branches")
-  user        User     @relation(fields: [userId], references: [email], onDelete: Cascade)
-  cards       Card[]   @relation("CardToDeck")
+  id              String   @id
+  name            String
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  description     String?
+  defaultBranchId String?  @unique
+  defaultBranch   Branch?  @relation(fields: [defaultBranchId], references: [id], name: "defaultBranch")
+  branches        Branch[] @relation(name: "branches")
+  user            User     @relation(fields: [userId], references: [email], onDelete: Cascade)
+  cards           Card[]   @relation("CardToDeck")
 
   @@index([userId])
 }
 
 model Branch {
-  id           String   @id @unique
-  name         String
-  defaultBranchOf Deck? @relation(name: "defaultBranch")
-  deckId       String
-  headCommitId String @unique
-  headCommit Commit @relation(fields: [headCommitId], references: [id], name: "HEAD")
-  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade, name: "branches")
-  commits      Commit[]
+  id              String   @id @unique
+  name            String
+  defaultBranchOf Deck?    @relation(name: "defaultBranch")
+  deckId          String
+  headCommitId    String?   @unique
+  headCommit      Commit?   @relation(fields: [headCommitId], references: [id], name: "HEAD")
+  deck            Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade, name: "branches")
+  commits         Commit[]
 }
 
 model Commit {
-  id          String @unique
-  description String
-  createdAt   DateTime @default(now())
-  branchId    String
-  changes     Change[]
-  headBranchOf Branch? @relation(name: "HEAD")
-  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  id           String   @unique
+  description  String
+  createdAt    DateTime @default(now())
+  branchId     String
+  changes      Change[]
+  headBranchOf Branch?  @relation(name: "HEAD")
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@id([id, branchId])
 }
