@@ -14,7 +14,7 @@ model Card {
   imageUrl String?
   faces    CardFace[]
   Change   Change[]
-  decks    Deck[]     @relation("CardToDeck")
+   snapshot SnapShot[] @relation("CardToSnapshot")
 }
 
 model CardFace {
@@ -22,7 +22,6 @@ model CardFace {
   name     String
   imageUrl String?
   card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
-
   @@id([cardId, name])
 }
 
@@ -39,52 +38,55 @@ model User {
 }
 
 model Deck {
-  id              String   @id
+  id              String   @id @db.Char(10)
   name            String
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   description     String?
-  defaultBranchId String?  @unique
+  defaultBranchId String  @unique
   defaultBranch   Branch?  @relation(fields: [defaultBranchId], references: [id], name: "defaultBranch")
   branches        Branch[] @relation(name: "branches")
   user            User     @relation(fields: [userId], references: [email], onDelete: Cascade)
-  cards           Card[]   @relation("CardToDeck")
 
   @@index([userId])
 }
 
 model Branch {
-  id              String   @id @unique
+  id              String   @id @unique @db.Char(10)
   name            String
   defaultBranchOf Deck?    @relation(name: "defaultBranch")
-  deckId          String
-  headCommitId    String?   @unique
+  headCommitId    String?   @unique 
   headCommit      Commit?   @relation(fields: [headCommitId], references: [id], name: "HEAD")
+  deckId          String
   deck            Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade, name: "branches")
   commits         Commit[]
 }
 
 model Commit {
-  id           String   @unique
+  id           String   @unique @id @db.Char(10)
   description  String
   createdAt    DateTime @default(now())
   branchId     String
   changes      Change[]
   headBranchOf Branch?  @relation(name: "HEAD")
   branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  snapshot     SnapShot?
+}
 
-  @@id([id, branchId])
+model SnapShot {
+  id String @db.Char(10) @id
+  commit Commit @relation(fields: [commitID], references: [id])
+  commitID String @unique
+  card Card[] @relation("CardToSnapshot")
 }
 
 model Change {
-  id             String
   action         String
   commitId       String
-  commitBranchId String
   cardId         String
   card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  commit         Commit @relation(fields: [commitId, commitBranchId], references: [id, branchId], onDelete: Cascade)
+  commit         Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
 
-  @@id([id, commitId])
+  @@id([action, cardId, commitId])
 }
