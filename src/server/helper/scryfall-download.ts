@@ -44,7 +44,9 @@ export default async () => {
           }
         })
       )
-    )
+    ).catch((e) => {
+      console.error("Error uploading chunk:", e);
+    });
   }
 
   console.timeEnd('Upload time');
