@@ -11,8 +11,8 @@
 - [X] Deck schema
 - [X] Create Deck
 - [X] Get Deck
-- [ ] Change Deck Title
-- [ ] Change Deck Description
+- [X] Change Deck Title
+- [X] Change Deck Description
 - [ ] Add Card to Deck
 - [ ] Remove Card from Deck
 - [ ] Scryfall Search
