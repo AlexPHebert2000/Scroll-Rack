@@ -32,7 +32,7 @@ const routes : {path: string, element: ReactElement}[] = [
     element: <Home />
   },
   {
-    path: "/deck",
+    path: "/deck/:id/:branch?/:commit?",
     element: <Decklist />
   }
 ]
