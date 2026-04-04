@@ -19,7 +19,7 @@ const Home = () :ReactElement => {
 
   const user : {username: string, decks: {name: string, id: string}[]} = data?.data.user;
 
-  const handleClickDeck = (e : React.MouseEventHandler<HTMLAnchorElement>, id : string) => {
+  const handleClickDeck = (e : React.MouseEvent, id : string) => {
     navigate(`/deck?id=${id}`);
   }
 

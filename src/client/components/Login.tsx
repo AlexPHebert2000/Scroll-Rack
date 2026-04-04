@@ -33,7 +33,7 @@ const Login = () :ReactElement => {
         throw new Error("Login Failed")
       }
     }
-    catch(e){
+    catch(e :any){
       console.error(e.response.data);
     }
   }

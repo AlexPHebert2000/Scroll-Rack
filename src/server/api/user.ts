@@ -30,7 +30,7 @@ userRouter.post("/", async (req : Request, res : Response) => {
     
     res.sendStatus(201);
   }
-  catch(e){
+  catch(e :any){
     
     console.log(`Error creating user : ${e.message}`);
     if (e.message == "Username Exists"){
@@ -71,7 +71,7 @@ userRouter.post("/login", async (req : Request, res : Response) => {
     else { throw new Error("Incorrect Password")}
     res.sendStatus(200);
   }
-  catch(e){
+  catch(e :any){
     console.log(`Failed to log in user : ${e.message}`);
     res.sendStatus(e.message === "User not found" || e.message === "Incorrect Password" ? 401 : 500);
   }
@@ -99,7 +99,7 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
     });
     res.send(profile);
   }
-  catch(e){
+  catch(e :any){
     console.log(`Failed to get ${username} profile : ${e.message}`);
     if (e.code === 'P2025'){
       res.status(404).json({error : `User ${username} not found`})
@@ -142,7 +142,7 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
     })
     res.send(user);
   }
-  catch(e){
+  catch(e :any){
     console.log(`Failed to find user from session : ${e.message}`);
     res.sendStatus(500);
   }
