@@ -44,7 +44,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   }
 });
 
-deckRouter.get("/:id/:branch", async (req : Request, res : Response) => {
+deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
   const {id, branch} = req.params;
   const prisma = new PrismaClient();
   try{
@@ -101,7 +101,7 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
 
     //update branch with new decklist and commit
     await prisma.branch.update({
-      where: {id},
+      where: {id: branch},
       data: {
         commits: {create: {
           id: randomBytes(4).toString("base64url"),
