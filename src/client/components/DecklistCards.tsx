@@ -5,7 +5,13 @@ import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
-import CardImage, { Card, cardDisplayName } from "./CardImage";
+import CardImage, { Card, CARD_WIDTH, cardDisplayName } from "./CardImage";
+
+const GRID_COLS = 3;
+const GRID_GAP = 4; // px
+
+// Fixed panel width so the grid never reflows: cols × cardWidth + gaps + padding + border
+export const DECKLIST_PANEL_WIDTH = GRID_COLS * CARD_WIDTH + (GRID_COLS - 1) * GRID_GAP + 2 * GRID_GAP + 2;
 
 interface Props {
   currentCards: Card[];
@@ -52,7 +58,7 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
   }
 
   return (
-    <Box sx={{ ...containerSx, display: "flex", flexWrap: "wrap", gap: 1, p: 1 }}>
+    <Box sx={{ ...containerSx, display: "grid", gridTemplateColumns: `repeat(${GRID_COLS}, ${CARD_WIDTH}px)`, gap: `${GRID_GAP}px`, p: `${GRID_GAP}px` }}>
       {currentCards.map((card) => {
         const removing = pendingRemoves.has(card.id);
         return (
