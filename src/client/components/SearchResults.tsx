@@ -78,7 +78,7 @@ const SearchResults = ({
           const stagingRemoval = pendingRemoves.has(card.id);
 
           return (
-            <Grid item xs={4} key={card.id}>
+            <Grid item xs={6} key={card.id}>
               <CardImage
                 card={card}
                 dimmed={stagingRemoval}
