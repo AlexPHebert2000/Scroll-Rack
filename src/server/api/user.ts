@@ -110,10 +110,11 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
 userRouter.get("/session/:id", async (req: Request, res: Response) => {
   const {id} = req.params
   try {
-    const user = await prisma.session.findUniqueOrThrow({
+    const session = await prisma.session.findUniqueOrThrow({
       where: {id},
       select: {
         id : true,
+        expires: true,
         user: {
           select: {
             username: true,
@@ -134,12 +135,18 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
           }
         }
       }
-    })
-    res.send(user);
+    });
+
+    if (session.expires < new Date()) {
+      return res.sendStatus(401);
+    }
+
+    const { expires, ...sessionData } = session;
+    res.send(sessionData);
   }
   catch(e :any){
     console.log(`Failed to find user from session : ${e.message}`);
-    res.sendStatus(500);
+    res.sendStatus(e.code === 'P2025' ? 401 : 500);
   }
 })
 
