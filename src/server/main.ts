@@ -10,8 +10,11 @@ app.use(bodyParser.json());
 
 app.use("/api", api)
 
-app.get("/download", (_, res) => {
-  scryfallDownload()
+app.get("/download", (req, res) => {
+  if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET) {
+    return res.sendStatus(401);
+  }
+  scryfallDownload();
   res.sendStatus(200);
 });
 
