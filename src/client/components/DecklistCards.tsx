@@ -5,13 +5,8 @@ import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
-import CardImage, { Card, CARD_WIDTH, cardDisplayName } from "./CardImage";
-
-const GRID_COLS = 3;
-const GRID_GAP = 4; // px
-
-// Fixed panel width so the grid never reflows: cols × cardWidth + gaps + padding + border
-export const DECKLIST_PANEL_WIDTH = GRID_COLS * CARD_WIDTH + (GRID_COLS - 1) * GRID_GAP + 2 * GRID_GAP + 2;
+import Grid from "@mui/material/Grid";
+import CardImage, { Card, cardDisplayName } from "./CardImage";
 
 interface Props {
   currentCards: Card[];
@@ -58,45 +53,49 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
   }
 
   return (
-    <Box sx={{ ...containerSx, display: "grid", gridTemplateColumns: `repeat(${GRID_COLS}, ${CARD_WIDTH}px)`, gap: `${GRID_GAP}px`, p: `${GRID_GAP}px` }}>
-      {currentCards.map((card) => {
-        const removing = pendingRemoves.has(card.id);
-        return (
-          <CardImage
-            key={card.id}
-            card={card}
-            dimmed={removing}
-            action={
-              removing ? (
+    <Box sx={containerSx}>
+      <Grid container spacing={2} sx={{ p: 1 }}>
+        {currentCards.map((card) => {
+          const removing = pendingRemoves.has(card.id);
+          return (
+            <Grid item xs={4} key={card.id}>
+              <CardImage
+                card={card}
+                dimmed={removing}
+                action={
+                  removing ? (
+                    <Button size="small" variant="contained" disableElevation onClick={() => onUndo(card.id)}>
+                      Undo
+                    </Button>
+                  ) : (
+                    <IconButton
+                      size="small"
+                      onClick={() => onRemove(card.id)}
+                      aria-label="remove"
+                      sx={{ bgcolor: "rgba(0,0,0,0.55)", color: "white", "&:hover": { bgcolor: "rgba(0,0,0,0.8)" } }}
+                    >
+                      ✕
+                    </IconButton>
+                  )
+                }
+              />
+            </Grid>
+          );
+        })}
+        {addedCards.map((card) => (
+          <Grid item xs={4} key={card.id}>
+            <CardImage
+              card={card}
+              addedHighlight
+              action={
                 <Button size="small" variant="contained" disableElevation onClick={() => onUndo(card.id)}>
                   Undo
                 </Button>
-              ) : (
-                <IconButton
-                  size="small"
-                  onClick={() => onRemove(card.id)}
-                  aria-label="remove"
-                  sx={{ bgcolor: "rgba(0,0,0,0.55)", color: "white", "&:hover": { bgcolor: "rgba(0,0,0,0.8)" } }}
-                >
-                  ✕
-                </IconButton>
-              )
-            }
-          />
-        );
-      })}
-      {addedCards.map((card) => (
-        <CardImage
-          key={card.id}
-          card={card}
-          addedHighlight
-          action={
-            <Button size="small" variant="contained" disableElevation onClick={() => onUndo(card.id)}>
-              Undo
-            </Button>
-          }
-        />
-      ))}
+              }
+            />
+          </Grid>
+        ))}
+      </Grid>
     </Box>
   );
 };

@@ -6,6 +6,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import Typography from "@mui/material/Typography";
+import Grid from "@mui/material/Grid";
 import CardImage, { Card, cardDisplayName } from "./CardImage";
 
 interface Props {
@@ -69,44 +70,47 @@ const SearchResults = ({
   }
 
   return (
-    <Box sx={{ ...containerSx, display: "flex", flexWrap: "wrap", gap: 1, p: 1 }}>
-      {results.map((card) => {
-        const alreadyInDeck = currentCards.some((c) => c.id === card.id);
-        const staged = pendingAdds.has(card.id);
-        const stagingRemoval = pendingRemoves.has(card.id);
+    <Box sx={containerSx}>
+      <Grid container spacing={2} sx={{ p: 1 }}>
+        {results.map((card) => {
+          const alreadyInDeck = currentCards.some((c) => c.id === card.id);
+          const staged = pendingAdds.has(card.id);
+          const stagingRemoval = pendingRemoves.has(card.id);
 
-        return (
-          <CardImage
-            key={card.id}
-            card={card}
-            dimmed={stagingRemoval}
-            addedHighlight={staged}
-            action={
-              staged ? (
-                <Button size="small" variant="contained" disableElevation onClick={() => onUndo(card.id)}>
-                  Undo
-                </Button>
-              ) : alreadyInDeck && !stagingRemoval ? (
-                <IconButton
-                  size="small"
-                  onClick={() => onRemove(card.id)}
-                  sx={{ bgcolor: "rgba(180,0,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(180,0,0,0.95)" } }}
-                >
-                  ✕
-                </IconButton>
-              ) : (
-                <IconButton
-                  size="small"
-                  onClick={() => onAdd(card)}
-                  sx={{ bgcolor: "rgba(0,120,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(0,120,0,0.95)" } }}
-                >
-                  +
-                </IconButton>
-              )
-            }
-          />
-        );
-      })}
+          return (
+            <Grid item xs={4} key={card.id}>
+              <CardImage
+                card={card}
+                dimmed={stagingRemoval}
+                addedHighlight={staged}
+                action={
+                  staged ? (
+                    <Button size="small" variant="contained" disableElevation onClick={() => onUndo(card.id)}>
+                      Undo
+                    </Button>
+                  ) : alreadyInDeck && !stagingRemoval ? (
+                    <IconButton
+                      size="small"
+                      onClick={() => onRemove(card.id)}
+                      sx={{ bgcolor: "rgba(180,0,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(180,0,0,0.95)" } }}
+                    >
+                      ✕
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      size="small"
+                      onClick={() => onAdd(card)}
+                      sx={{ bgcolor: "rgba(0,120,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(0,120,0,0.95)" } }}
+                    >
+                      +
+                    </IconButton>
+                  )
+                }
+              />
+            </Grid>
+          );
+        })}
+      </Grid>
       {empty && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 1 }}>No results found.</Typography>
       )}

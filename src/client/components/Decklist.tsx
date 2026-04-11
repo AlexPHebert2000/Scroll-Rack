@@ -15,7 +15,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 import { Card } from "./CardImage";
-import DecklistCards, { DECKLIST_PANEL_WIDTH } from "./DecklistCards";
+import DecklistCards from "./DecklistCards";
 import SearchResults from "./SearchResults";
 
 interface Branch { id: string; name: string; cards: Card[]; }
@@ -122,7 +122,7 @@ const Decklist = () => {
     <Box sx={{ display: "flex", height: "100vh", overflow: "hidden", gap: 2, p: 2 }}>
 
       {/* ── Left: Decklist ── */}
-      <Box sx={{ width: DECKLIST_PANEL_WIDTH, flexShrink: 0, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+      <Box sx={{ width: 560, flexShrink: 0, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
 
         <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <Box>

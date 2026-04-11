@@ -9,9 +9,6 @@ export interface Card { id: string; name: string; imageUrl: string | null; faces
 export const cardDisplayName = (card: Card) =>
   card.faces?.length > 0 ? card.faces.map((f) => f.name).join(" // ") : card.name;
 
-export const CARD_WIDTH = 180;
-export const CARD_HEIGHT = Math.round(CARD_WIDTH * (1040 / 745));
-
 export interface CardImageProps {
   card: Card;
   action?: React.ReactNode;
@@ -28,8 +25,7 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
     <Box
       sx={{
         position: "relative",
-        width: CARD_WIDTH,
-        flexShrink: 0,
+        width: "100%",
         opacity: dimmed ? 0.4 : 1,
         outline: addedHighlight ? "3px solid" : "none",
         outlineColor: "success.main",
@@ -46,8 +42,8 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
       ) : (
         <Box
           sx={{
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
+            width: "100%",
+            aspectRatio: "745 / 1040",
             bgcolor: "action.selected",
             borderRadius: 2,
             display: "flex",
