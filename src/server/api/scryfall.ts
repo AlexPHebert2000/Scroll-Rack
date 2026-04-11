@@ -1,12 +1,11 @@
 import { Router } from "express";
 import axios from "axios";
 import type { Request, Response } from "express";
-import { PrismaClient } from '../../../generated/prisma/index.js';
+import prisma from '../../db.js';
 
 const scryfallRouter = Router();
 
 scryfallRouter.get("/search", async (req :Request , res :Response) => {
-  const prisma = new PrismaClient();
   try {
     const qString = req.query.qString;
     const { data } = await axios.get(`https://api.scryfall.com/cards/search?q=${qString}`);
@@ -20,10 +19,6 @@ scryfallRouter.get("/search", async (req :Request , res :Response) => {
   catch (error) {
     console.error("Error fetching data from Scryfall:", error.message);
     res.status(500).json({ error: "Failed to fetch data from Scryfall" });
-  }
-  
-  finally {
-    await prisma.$disconnect();
   }
 })
 

@@ -1,12 +1,11 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { PrismaClient } from '../../../generated/prisma/index.js';
-import { randomBytes, createHash } from "crypto";
+import prisma from '../../db.js';
+import { randomBytes } from "crypto";
 
 const deckRouter = Router();
 
 deckRouter.post("/", async (req : Request, res : Response) => {
-  const prisma = new PrismaClient();
   const {name, userId, description} = req.body;
   const commitHash = randomBytes(4).toString("base64url");
   try {
@@ -38,15 +37,10 @@ deckRouter.post("/", async (req : Request, res : Response) => {
     console.log(`Failed to create deck : ${e.message}`);
     res.status(500).json({error: "Failed to create deck"});
   }
-  finally{
-    await prisma.$disconnect();
-    console.log("Deck upload done");
-  }
 });
 
 deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
   const {id, branch} = req.params;
-  const prisma = new PrismaClient();
   try{
     const deck = await prisma.deck.findUniqueOrThrow({
       where: {id},
@@ -73,16 +67,12 @@ deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
       res.status(500).json({error: "Failed to get deck branch"});
     }
   }
-  finally{
-    await prisma.$disconnect()
-  }
 });
 
 
 deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
   const {id, branch} = req.params;
   const {changes, description, decklist} : {changes : {action: string, cardId: string}[], description : string, decklist : string[]}= req.body;
-  const prisma = new PrismaClient();
   
   try{
     // Check for deck + branch in db
@@ -127,9 +117,6 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
     else{
       res.status(500).json({error: "Failed to upload deck update"})
     }
-  }
-  finally{
-    await prisma.$disconnect();
   }
 });
 

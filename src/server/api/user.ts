@@ -1,13 +1,12 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { PrismaClient } from '../../../generated/prisma/index.js';
+import prisma from '../../db.js';
 import bcrypt from 'bcrypt';
 import { randomUUID } from "crypto";
 
 const userRouter = Router();
 
 userRouter.post("/", async (req : Request, res : Response) => {
-  const prisma = new PrismaClient()
   const {name, email, username, password} = req.body;
 
   try{
@@ -43,14 +42,11 @@ userRouter.post("/", async (req : Request, res : Response) => {
       res.status(500).json({error : "Failed to create user"});
     }
   }
-  finally{
-    await prisma.$disconnect();
   }
 })
 
 userRouter.post("/login", async (req : Request, res : Response) => {
   const {email, password} = req.body;
-  const prisma = new PrismaClient();
   try {
     const user = await prisma.user.findUnique({where: {email}});
     if (!user){throw new Error("User not found")}
@@ -75,14 +71,10 @@ userRouter.post("/login", async (req : Request, res : Response) => {
     console.log(`Failed to log in user : ${e.message}`);
     res.sendStatus(e.message === "User not found" || e.message === "Incorrect Password" ? 401 : 500);
   }
-  finally{
-    await prisma.$disconnect();
-  }
 })
 
 userRouter.get("/profile/:username", async (req : Request, res : Response) => {
   const {username} = req.params;
-  const prisma = new PrismaClient();
   try {
     const profile = await prisma.user.findFirstOrThrow({
       where:{ username },
@@ -108,14 +100,10 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
       res.status(500).json({error : `Failed to get ${username} profile`});
     }
   }
-  finally{
-    await prisma.$disconnect()
-  }
 })
 
 userRouter.get("/session/:id", async (req: Request, res: Response) => {
   const {id} = req.params
-  const prisma = new PrismaClient();
   try {
     const user = await prisma.session.findUniqueOrThrow({
       where: {id},
@@ -147,9 +135,6 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
   catch(e :any){
     console.log(`Failed to find user from session : ${e.message}`);
     res.sendStatus(500);
-  }
-  finally{
-    await prisma.$disconnect();
   }
 })
 

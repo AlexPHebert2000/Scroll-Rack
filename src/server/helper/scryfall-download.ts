@@ -1,15 +1,13 @@
 import axios from 'axios';
 import type { Card } from '../../../generated/prisma/client.js';
-import { PrismaClient } from '../../../generated/prisma/client.js';
+import prisma from '../db.js';
 
 const CHUNK_SIZE = 500;
 
 export default async () => {
   console.log("Starting card download ... Please Wait")
-  
+
   console.time('Upload time');
-  
-  const prisma = new PrismaClient();
   
   const {data} = await axios.get('https://api.scryfall.com/bulk-data')
   const bulkData = (await axios.get(data.data[0].download_uri)).data.filter((card:any) => card.layout !== 'art_series' && card.layout !== 'token');
@@ -52,6 +50,4 @@ export default async () => {
   }
 
   console.timeEnd('Upload time');
-  await prisma.$disconnect();
-  console.log('Database connection closed.');
 }
