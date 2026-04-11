@@ -107,8 +107,8 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
           id: randomBytes(4).toString("base64url"),
           description,
           changes: {
-            create: changes.map(({action, cardId}, index) => ({
-              id: index,
+            create: changes.map(({action, cardId}) => ({
+              id: randomBytes(4).toString("base64url"),
               action,
               card: {connect: {id: cardId}}
             }))
