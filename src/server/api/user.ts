@@ -17,7 +17,7 @@ userRouter.post("/", async (req : Request, res : Response) => {
 
     const existingUsername = await prisma.user.findUnique({where:{username}})
     if (existingUsername){throw new Error("Username Exists")}
-    
+
     const user = await prisma.user.create({
       data:{
         username,
@@ -26,11 +26,10 @@ userRouter.post("/", async (req : Request, res : Response) => {
         password : await bcrypt.hash(password, 10)
       }
     });
-    
+
     res.sendStatus(201);
   }
   catch(e :any){
-    
     console.log(`Error creating user : ${e.message}`);
     if (e.message == "Username Exists"){
       res.status(409).json({error: `Failed to create user: Username ${username} already exists`});
@@ -41,7 +40,6 @@ userRouter.post("/", async (req : Request, res : Response) => {
     else{
       res.status(500).json({error : "Failed to create user"});
     }
-  }
   }
 })
 
@@ -78,40 +76,12 @@ userRouter.post("/login", async (req : Request, res : Response) => {
   }
 })
 
-userRouter.get("/profile/:username", async (req : Request, res : Response) => {
-  const {username} = req.params;
-  try {
-    const profile = await prisma.user.findFirstOrThrow({
-      where:{ username },
-      omit:{
-        password: true,
-        updatedAt: true,
-      },
-      include: {
-        decks: {select:{
-          name: true,
-          id: true
-        }}
-      }
-    });
-    res.send(profile);
-  }
-  catch(e :any){
-    console.log(`Failed to get ${username} profile : ${e.message}`);
-    if (e.code === 'P2025'){
-      res.status(404).json({error : `User ${username} not found`})
-    }
-    else {
-      res.status(500).json({error : `Failed to get ${username} profile`});
-    }
-  }
-})
-
-userRouter.get("/session/:id", async (req: Request, res: Response) => {
-  const {id} = req.params
+userRouter.get("/me", async (req: Request, res: Response) => {
+  const sessionId = req.cookies['scroll-rack-session'];
+  if (!sessionId) { return res.sendStatus(401); }
   try {
     const session = await prisma.session.findUniqueOrThrow({
-      where: {id},
+      where: {id: sessionId},
       select: {
         id : true,
         expires: true,
@@ -147,6 +117,35 @@ userRouter.get("/session/:id", async (req: Request, res: Response) => {
   catch(e :any){
     console.log(`Failed to find user from session : ${e.message}`);
     res.sendStatus(e.code === 'P2025' ? 401 : 500);
+  }
+})
+
+userRouter.get("/profile/:username", async (req : Request, res : Response) => {
+  const {username} = req.params;
+  try {
+    const profile = await prisma.user.findFirstOrThrow({
+      where:{ username },
+      omit:{
+        password: true,
+        updatedAt: true,
+      },
+      include: {
+        decks: {select:{
+          name: true,
+          id: true
+        }}
+      }
+    });
+    res.send(profile);
+  }
+  catch(e :any){
+    console.log(`Failed to get ${username} profile : ${e.message}`);
+    if (e.code === 'P2025'){
+      res.status(404).json({error : `User ${username} not found`})
+    }
+    else {
+      res.status(500).json({error : `Failed to get ${username} profile`});
+    }
   }
 })
 

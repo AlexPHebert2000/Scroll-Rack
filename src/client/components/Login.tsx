@@ -1,7 +1,6 @@
 import React, {useState} from 'react';
 import type { ReactElement } from 'react';
 import axios from 'axios';
-import Cookie from 'js-cookie';
 import { useNavigate } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -25,16 +24,10 @@ const Login = () :ReactElement => {
   const handleSumbit = async () => {
     try{
       await axios.post('/api/user/login', {email, password});
-      const sessionCookie = Cookie.get("scroll-rack-session");
-      if (sessionCookie) {
-        navigate("/")
-      }
-      else{
-        throw new Error("Login Failed")
-      }
+      navigate("/");
     }
     catch(e :any){
-      console.error(e.response.data);
+      console.error(e.response?.data);
     }
   }
 

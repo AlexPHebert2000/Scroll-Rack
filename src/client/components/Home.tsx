@@ -1,28 +1,25 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect} from "react";
 import type { ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import Cookie from "js-cookie";
 
 const Home = () :ReactElement => {
   const navigate = useNavigate();
-  const checkCookie = async () => {
-    const sessionCookie = Cookie.get("scroll-rack-session");
-    return await axios.get(`/api/user/session/${sessionCookie}`);
+  const checkSession = async () => {
+    return await axios.get('/api/user/me');
   }
 
-  const q = useQuery({queryKey: ['sessionLookup'], queryFn: checkCookie})
+  const q = useQuery({queryKey: ['sessionLookup'], queryFn: checkSession})
   const user : {username: string, decks: {name: string, id: string}[]} = q.data?.data.user
 
   const handleClickDeck = (e : React.MouseEvent, id : string) => {
     navigate(`/deck/${id}`);
   }
-  
+
   useEffect(() => {
-    if (!Cookie.get("scroll-rack-session")){ navigate('/login')}
-    console.log(user)
-  }, [])
+    if (q.isError) { navigate('/login'); }
+  }, [q.isError])
 
   return (
     <>
