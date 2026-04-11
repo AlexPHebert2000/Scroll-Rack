@@ -16,8 +16,8 @@ userRouter.post("/", async (req : Request, res : Response) => {
     let exsistingUser = await prisma.user.findUnique({where:{email}});
     if (exsistingUser){throw new Error("Email Exists")}
 
-    await prisma.user.findUnique({where:{username}})
-    if (exsistingUser){throw new Error("Username Exists")}
+    const existingUsername = await prisma.user.findUnique({where:{username}})
+    if (existingUsername){throw new Error("Username Exists")}
     
     const user = await prisma.user.create({
       data:{
