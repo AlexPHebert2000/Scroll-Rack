@@ -104,7 +104,9 @@ userRouter.get("/profile/:username", async (req : Request, res : Response) => {
     if (e.code === 'P2025'){
       res.status(404).json({error : `User ${username} not found`})
     }
-    res.status(500).json({error : `Failed to get ${username} profile`});
+    else {
+      res.status(500).json({error : `Failed to get ${username} profile`});
+    }
   }
   finally{
     await prisma.$disconnect()
