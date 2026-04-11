@@ -55,9 +55,10 @@ const Login = () :ReactElement => {
         <InputLabel htmlFor='password'>Password </InputLabel>
         <Input
           id='password'
+          type='password'
           value={password}
           onChange={(e) => {handleInputChange(e, setPassword)}}
-          autoComplete='password'
+          autoComplete='current-password'
           required
         />
       </FormControl>
