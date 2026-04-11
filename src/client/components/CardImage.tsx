@@ -25,7 +25,7 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
     <Box
       sx={{
         position: "relative",
-        width: "40%",
+        width: "100%",
         opacity: dimmed ? 0.4 : 1,
         outline: addedHighlight ? "3px solid" : "none",
         outlineColor: "success.main",
