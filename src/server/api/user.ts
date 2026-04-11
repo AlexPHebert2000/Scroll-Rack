@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import prisma from '../../db.js';
+import prisma from '../db.js';
 import bcrypt from 'bcrypt';
 import { randomUUID } from "crypto";
 

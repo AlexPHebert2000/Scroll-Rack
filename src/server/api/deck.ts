@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import prisma from '../../db.js';
+import prisma from '../db.js';
 import { randomBytes } from "crypto";
 
 const deckRouter = Router();

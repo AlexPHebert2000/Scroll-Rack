@@ -1,7 +1,7 @@
 import { Router } from "express";
 import axios from "axios";
 import type { Request, Response } from "express";
-import prisma from '../../db.js';
+import prisma from '../db.js';
 
 const scryfallRouter = Router();
 

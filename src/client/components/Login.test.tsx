@@ -1,0 +1,58 @@
+import '@testing-library/jest-dom';
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import axios from 'axios';
+import Login from './Login';
+
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+const mockNavigate = jest.fn();
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
+
+beforeEach(() => jest.clearAllMocks());
+
+const renderLogin = () =>
+  render(
+    <MemoryRouter>
+      <Login />
+    </MemoryRouter>
+  );
+
+describe('Login', () => {
+  it('renders email and password inputs', () => {
+    renderLogin();
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+  });
+
+  it('password field is masked', () => {
+    renderLogin();
+    expect(screen.getByLabelText(/password/i)).toHaveAttribute('type', 'password');
+  });
+
+  it('navigates to / after successful login', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ status: 200 });
+
+    renderLogin();
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@test.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/'));
+  });
+
+  it('does not navigate when login fails', async () => {
+    mockedAxios.post.mockRejectedValueOnce({ response: { data: { error: 'Unauthorized' } } });
+
+    renderLogin();
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalled());
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
