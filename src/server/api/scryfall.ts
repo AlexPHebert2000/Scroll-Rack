@@ -7,8 +7,8 @@ const scryfallRouter = Router();
 
 scryfallRouter.get("/search", async (req :Request , res :Response) => {
   try {
-    const qString = req.query.qString;
-    const { data } = await axios.get(`https://api.scryfall.com/cards/search?q=${qString}`);
+    const qString = req.query.qString as string;
+    const { data } = await axios.get(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(qString)}`);
     const cards = await prisma.card.findMany({
       where: { id: { in: data.data.map((card: any) => card.id) } },
       include: { faces: true },
