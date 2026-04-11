@@ -54,7 +54,7 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
 
   return (
     <Box sx={containerSx}>
-      <Grid container spacing={2} sx={{ p: 1 }}>
+      <Grid container spacing={2}  sx={{ p: 1 }}>
         {currentCards.map((card) => {
           const removing = pendingRemoves.has(card.id);
           return (
