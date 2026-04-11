@@ -46,11 +46,9 @@ deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
       where: {id},
       include: {
         branches: {
-          where: {
-            id: branch
-          },
+          where: branch ? { id: branch } : { name: "main" },
           include:{
-            cards: true
+            cards: { include: { faces: true } }
           }
         }
       }
@@ -104,7 +102,7 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
             }))
           }
         }},
-        cards: {connect: decklist.map(id => ({id}))}
+        cards: {set: decklist.map(id => ({id}))}
       }
     });
     res.sendStatus(201);
