@@ -33,20 +33,9 @@ const renderDecklist = () => {
 };
 
 describe('Decklist', () => {
-  it('fetches /api/deck/:id/:branch when branch is present', async () => {
-    mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-abc', commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: {} });
-
-    renderDecklist();
-
-    await waitFor(() =>
-      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1/branch-abc')
-    );
-  });
-
-  it('fetches /api/deck/:id when no branch is in the URL', async () => {
+  it('always fetches /api/deck/:id (main branch hardcoded on client)', async () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: {} });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [] } });
 
     renderDecklist();
 
@@ -55,22 +44,14 @@ describe('Decklist', () => {
     );
   });
 
-  it('re-fetches when branch param changes', async () => {
-    mockedAxios.get.mockResolvedValue({ data: {} });
+  it('ignores branch URL param and always calls /api/deck/:id', async () => {
+    mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-abc', commit: undefined });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [] } });
 
-    // First render with branch-1
-    mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-1', commit: undefined });
-    const { unmount } = renderDecklist();
-    await waitFor(() =>
-      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1/branch-1')
-    );
-    unmount();
-
-    // Second independent render with branch-2
-    mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-2', commit: undefined });
     renderDecklist();
+
     await waitFor(() =>
-      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1/branch-2')
+      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1')
     );
   });
 });
