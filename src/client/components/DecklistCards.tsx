@@ -58,7 +58,7 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
         {currentCards.map((card) => {
           const removing = pendingRemoves.has(card.id);
           return (
-            <Grid size={{ xs: 6, md: 2 }} key={card.id}>
+            <Grid size={{ xs: 6, md: 3 }} key={card.id}>
               <CardImage
                 card={card}
                 dimmed={removing}
@@ -83,7 +83,7 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
           );
         })}
         {addedCards.map((card) => (
-          <Grid size={{ xs: 6, md: 2 }} key={card.id}>
+          <Grid size={{ xs: 6, md: 3 }} key={card.id}>
             <CardImage
               card={card}
               addedHighlight

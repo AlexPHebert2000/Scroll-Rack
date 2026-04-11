@@ -122,7 +122,7 @@ const Decklist = () => {
     <Box sx={{ display: "flex", height: "100vh", overflow: "hidden", gap: 2, p: 2 }}>
 
       {/* ── Left: Decklist ── */}
-      <Box sx={{ width: 560, flexShrink: 0, display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
+      <Box sx={{ flex: "0 0 66.67%", display: "flex", flexDirection: "column", gap: 1, minHeight: 0 }}>
 
         <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <Box>
