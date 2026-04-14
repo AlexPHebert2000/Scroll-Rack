@@ -1,4 +1,3 @@
-import "./App.css";
 import Box from '@mui/material/Box'
 import {Routes, Route} from 'react-router-dom';
 import type { ReactElement } from "react";

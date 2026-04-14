@@ -22,6 +22,12 @@ interface Props {
   onUndo: (cardId: string) => void;
 }
 
+const circularSx = {
+  width: "clamp(24px, 2.3vw, 36px)",
+  height: "clamp(24px, 2.3vw, 36px)",
+  padding: 0,
+};
+
 const SearchResults = ({
   results, currentCards, pendingAdds, pendingRemoves,
   viewMode, activeSearch, isFetching,
@@ -78,7 +84,7 @@ const SearchResults = ({
           const stagingRemoval = pendingRemoves.has(card.id);
 
           return (
-            <Grid size={{ xs: 6 }} key={card.id}>
+            <Grid size={{ xs: 6, md: 4 }} key={card.id}>
               <CardImage
                 card={card}
                 dimmed={stagingRemoval}
@@ -92,7 +98,7 @@ const SearchResults = ({
                     <IconButton
                       size="small"
                       onClick={() => onRemove(card.id)}
-                      sx={{ bgcolor: "rgba(180,0,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(180,0,0,0.95)" } }}
+                      sx={{ ...circularSx, bgcolor: "rgba(180,0,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(180,0,0,0.95)" } }}
                     >
                       ✕
                     </IconButton>
@@ -100,7 +106,7 @@ const SearchResults = ({
                     <IconButton
                       size="small"
                       onClick={() => onAdd(card)}
-                      sx={{ bgcolor: "rgba(0,120,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(0,120,0,0.95)" } }}
+                      sx={{ ...circularSx, bgcolor: "rgba(0,120,0,0.75)", color: "white", "&:hover": { bgcolor: "rgba(0,120,0,0.95)" } }}
                     >
                       +
                     </IconButton>

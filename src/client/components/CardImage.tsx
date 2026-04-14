@@ -16,6 +16,12 @@ export interface CardImageProps {
   addedHighlight?: boolean;
 }
 
+const circularSx = {
+  width: "clamp(24px, 2.3vw, 36px)",
+  height: "clamp(24px, 2.3vw, 36px)",
+  padding: 0,
+};
+
 const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => {
   const [faceIdx, setFaceIdx] = useState(0);
   const isMultiFace = (card.faces?.length ?? 0) >= 2;
@@ -31,6 +37,8 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
         outlineColor: "success.main",
         borderRadius: 2,
         transition: "opacity 0.15s",
+        "& .card-overlay": { opacity: 0, transition: "opacity 0.15s" },
+        "&:hover .card-overlay": { opacity: 1 },
       }}
     >
       {imageUrl ? (
@@ -58,10 +66,12 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
 
       {isMultiFace && (
         <IconButton
+          className="card-overlay"
           size="small"
           onClick={() => setFaceIdx((i) => (i === 0 ? 1 : 0))}
           title={faceIdx === 0 ? "Show back face" : "Show front face"}
           sx={{
+            ...circularSx,
             position: "absolute",
             bottom: 6,
             right: 6,
@@ -76,7 +86,7 @@ const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => 
       )}
 
       {action && (
-        <Box sx={{ position: "absolute", top: 4, right: 4 }}>
+        <Box className="card-overlay" sx={{ position: "absolute", top: 4, right: 4 }}>
           {action}
         </Box>
       )}

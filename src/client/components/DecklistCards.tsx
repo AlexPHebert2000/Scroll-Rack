@@ -17,6 +17,12 @@ interface Props {
   onUndo: (cardId: string) => void;
 }
 
+const circularSx = {
+  width: "clamp(24px, 2.3vw, 36px)",
+  height: "clamp(24px, 2.3vw, 36px)",
+  padding: 0,
+};
+
 const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onRemove, onUndo }: Props) => {
   const containerSx = { overflow: "auto", flex: 1, border: "1px solid", borderColor: "divider", borderRadius: 1 };
 
@@ -72,7 +78,7 @@ const DecklistCards = ({ currentCards, addedCards, pendingRemoves, viewMode, onR
                       size="small"
                       onClick={() => onRemove(card.id)}
                       aria-label="remove"
-                      sx={{ bgcolor: "rgba(0,0,0,0.55)", color: "white", "&:hover": { bgcolor: "rgba(0,0,0,0.8)" } }}
+                      sx={{ ...circularSx, bgcolor: "rgba(0,0,0,0.55)", color: "white", "&:hover": { bgcolor: "rgba(0,0,0,0.8)" } }}
                     >
                       ✕
                     </IconButton>
