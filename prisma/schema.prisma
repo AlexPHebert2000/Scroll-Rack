@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -17,6 +11,7 @@ datasource db {
 model Card {
   id       String     @id
   name     String
+  imageUrl String?
   faces    CardFace[]
   imageUrl String?
   decks    Branch[]
@@ -28,7 +23,6 @@ model CardFace {
   name     String
   imageUrl String?
   card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
-
   @@id([cardId, name])
 }
 
@@ -76,24 +70,29 @@ model Branch {
 }
 
 model Commit {
-  id          String
-  description String
-  createdAt   DateTime @default(now())
-  branchId    String
-  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade) // A commit belongs to a branch
-  changes     Change[] // A commit can have multiple changes
+  id           String   @unique @id @db.Char(10)
+  description  String
+  createdAt    DateTime @default(now())
+  branchId     String
+  changes      Change[]
+  headBranchOf Branch?  @relation(name: "HEAD")
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  snapshot     SnapShot?
+}
 
-  @@id([id, branchId])
+model SnapShot {
+  id String @db.Char(10) @id
+  commit Commit @relation(fields: [commitID], references: [id])
+  commitID String @unique
+  card Card[] @relation("CardToSnapshot")
 }
 
 model Change {
-  id             String
-  action         String // e.g., "add", "remove", "update"
+  action         String
   commitId       String
-  commitBranchId String
-  commit         Commit @relation(fields: [commitId, commitBranchId], references: [id, branchId], onDelete: Cascade) // A change belongs to a commit
   cardId         String
-  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade) // A card is involved in the change
+  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  commit         Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
 
-  @@id([id, commitId])
+  @@id([action, cardId, commitId])
 }

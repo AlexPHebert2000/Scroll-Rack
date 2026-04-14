@@ -32,6 +32,7 @@ export default async () => {
   console.log(`Retrieved ${bulkData.length} cards`);
   console.log(`Uploading to the database...`);
 
+
   for (let i = 0; i < bulkData.length; i += CHUNK_SIZE) {
     const chunk = bulkData.slice(i, i + CHUNK_SIZE);
     console.log(`Uploading cards ${i + 1} to ${Math.min(i + CHUNK_SIZE, bulkData.length)}...`);
