@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
-import Login from './Login';
+import Login from '../components/Login';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

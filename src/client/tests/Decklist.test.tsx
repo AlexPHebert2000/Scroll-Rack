@@ -4,7 +4,7 @@ import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
-import Decklist from './Decklist';
+import Decklist from '../components/Decklist';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;

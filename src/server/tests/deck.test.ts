@@ -67,6 +67,62 @@ describe('GET /api/deck/:id/:branch', () => {
     expect(res.body.id).toBe('deck-1');
   });
 
+  it('filters by branch id when branch param is provided', async () => {
+    db.deck.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'deck-1',
+      name: 'My Deck',
+      branches: [],
+    });
+
+    await request(app).get('/api/deck/deck-1/branch-abc');
+
+    expect(db.deck.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          branches: expect.objectContaining({ where: { id: 'branch-abc' } }),
+        }),
+      })
+    );
+  });
+
+  it('defaults to main branch when no branch param is provided', async () => {
+    db.deck.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'deck-1',
+      name: 'My Deck',
+      branches: [],
+    });
+
+    await request(app).get('/api/deck/deck-1');
+
+    expect(db.deck.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          branches: expect.objectContaining({ where: { name: 'main' } }),
+        }),
+      })
+    );
+  });
+
+  it('includes card faces in the query', async () => {
+    db.deck.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'deck-1',
+      name: 'My Deck',
+      branches: [],
+    });
+
+    await request(app).get('/api/deck/deck-1');
+
+    expect(db.deck.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          branches: expect.objectContaining({
+            include: { cards: { include: { faces: true } } },
+          }),
+        }),
+      })
+    );
+  });
+
   it('returns 404 when deck is not found', async () => {
     const notFound = new Error('Not found');
     notFound.name = 'PrismaClientKnownRequestError';
@@ -111,6 +167,27 @@ describe('POST /api/deck/:id/:branch', () => {
 
     expect(db.branch.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'branch-abc' } })
+    );
+  });
+
+  it('uses set (not connect) when updating cards so removals are applied', async () => {
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.branch.update.mockResolvedValueOnce({});
+
+    await request(app)
+      .post('/api/deck/deck-1/branch-1')
+      .send({
+        description: 'Remove a card',
+        changes: [{ action: 'remove', cardId: 'card-old' }],
+        decklist: ['card-keep'],
+      });
+
+    expect(db.branch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          cards: { set: [{ id: 'card-keep' }] },
+        }),
+      })
     );
   });
 
