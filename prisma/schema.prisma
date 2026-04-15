@@ -13,9 +13,9 @@ model Card {
   name     String
   imageUrl String?
   faces    CardFace[]
-  imageUrl String?
-  decks    Branch[]
-  Change   Change[] // Changes related to this card in the context of branches and commits
+  decks     Branch[]
+  Change    Change[]
+  snapShots SnapShot[] @relation("CardToSnapshot")
 }
 
 model CardFace {
@@ -64,9 +64,10 @@ model Branch {
   name         String   @default("main")
   deckId       String
   deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
-  cards        Card[] // each branch has a decklist
-  commits      Commit[] // A branch can have multiple commits
-  headCommitId String // A branch has a head commit for the latest state
+  cards        Card[]
+  commits      Commit[]
+  headCommit   Commit?  @relation(name: "HEAD", fields: [headCommitId], references: [id])
+  headCommitId String?  @db.Char(10) @unique
 }
 
 model Commit {
