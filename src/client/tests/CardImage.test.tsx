@@ -2,7 +2,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import CardImage from '../components/CardImage';
+import CardImage, { cardDisplayName } from '../components/CardImage';
 import type { Card } from '../components/CardImage';
 
 const singleFaceCard: Card = {
@@ -28,6 +28,35 @@ const doubleFacedCard: Card = {
     { name: 'Insectile Aberration', imageUrl: 'https://example.com/delver-back.jpg' },
   ],
 };
+
+describe('cardDisplayName', () => {
+  it('returns card.name for a single-face card', () => {
+    expect(cardDisplayName({ id: 'x', name: 'Lightning Bolt', imageUrl: null, faces: [] })).toBe('Lightning Bolt');
+  });
+
+  it('joins face names with " // " for a multi-face card', () => {
+    const card: Card = {
+      id: 'x',
+      name: 'Delver of Secrets',
+      imageUrl: null,
+      faces: [
+        { name: 'Delver of Secrets', imageUrl: null },
+        { name: 'Insectile Aberration', imageUrl: null },
+      ],
+    };
+    expect(cardDisplayName(card)).toBe('Delver of Secrets // Insectile Aberration');
+  });
+
+  it('falls back to card.name when faces is an empty array', () => {
+    expect(cardDisplayName({ id: 'x', name: 'Dark Ritual', imageUrl: null, faces: [] })).toBe('Dark Ritual');
+  });
+
+  it('does not throw when faces is undefined', () => {
+    expect(() =>
+      cardDisplayName({ id: 'x', name: 'Fireball', imageUrl: null, faces: undefined as any })
+    ).not.toThrow();
+  });
+});
 
 describe('CardImage', () => {
   it('renders the card image when imageUrl is present', () => {

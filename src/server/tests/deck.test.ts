@@ -191,6 +191,36 @@ describe('POST /api/deck/:id/:branch', () => {
     );
   });
 
+  it('records commit history with changes in the branch.update call', async () => {
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.branch.update.mockResolvedValueOnce({});
+
+    await request(app)
+      .post('/api/deck/deck-1/branch-1')
+      .send({
+        description: 'Add a card',
+        changes: [{ action: 'add', cardId: 'card-1' }],
+        decklist: ['card-1'],
+      });
+
+    expect(db.branch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          commits: {
+            create: expect.objectContaining({
+              description: 'Add a card',
+              changes: {
+                create: expect.arrayContaining([
+                  expect.objectContaining({ action: 'add' }),
+                ]),
+              },
+            }),
+          },
+        }),
+      })
+    );
+  });
+
   it('returns 404 when deck or branch is not found', async () => {
     const notFound: any = new Error('Not found');
     notFound.code = 'P2025';

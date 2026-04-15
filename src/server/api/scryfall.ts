@@ -7,7 +7,11 @@ const scryfallRouter = Router();
 
 scryfallRouter.get("/search", async (req :Request , res :Response) => {
   try {
-    const qString = req.query.qString as string;
+    const qString = req.query.qString as string | undefined;
+    if (!qString) {
+      res.status(400).json({ error: 'qString query parameter is required' });
+      return;
+    }
     const { data } = await axios.get(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(qString)}`);
     const cards = await prisma.card.findMany({
       where: { id: { in: data.data.map((card: any) => card.id) } },

@@ -96,30 +96,3 @@ Tests run with Jest in a jsdom environment using React Testing Library. Componen
 | Renders card images for each result | Correct number of `<img>` elements rendered |
 | Shows "No results found." in image mode | Empty state also works in image mode |
 
----
-
-## Recommended additions
-
-### `CardImage.test.tsx` — `cardDisplayName` unit tests (high priority)
-`cardDisplayName` is exported from `CardImage.tsx` and drives every card label in the app. It was patched during development (added `?.` defensive access) after a production crash caused by `faces` being undefined. It is currently only exercised indirectly through component renders.
-
-Cases to cover:
-- Single-face card returns `card.name`
-- Multi-face card joins face names with ` // `
-- Card with `faces: []` falls back to `card.name`
-- Card with `faces: undefined` does not throw
-
-### `Decklist.test.tsx` — commit flow (high priority)
-The commit dialog and mutation payload are the core feature of the app and are completely untested at the client level. A regression here would only be caught manually.
-
-Cases to cover:
-- "Commit Changes" button only appears when there are pending changes
-- Clicking it opens the dialog
-- Submitting fires `POST /api/deck/:id/:branchId` with the correct `changes` and `decklist` arrays
-- On success, pending state is cleared and the dialog closes
-
-### `Decklist.test.tsx` — view mode toggle (medium priority)
-The toggle between list and images is untested. Clicking it should change what's rendered in both the decklist and search results panels.
-
-### `Decklist.test.tsx` — pending state management (medium priority)
-The card count label (`N cards`) and the commit button appearance both depend on `pendingAdds` and `pendingRemoves`. These are untested — a regression in the set arithmetic would produce a wrong count or hide the commit button silently.

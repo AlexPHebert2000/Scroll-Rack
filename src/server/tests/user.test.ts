@@ -46,6 +46,22 @@ describe('POST /api/user', () => {
     expect(res.status).toBe(201);
   });
 
+  it('hashes the password before storing', async () => {
+    db.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    db.user.create.mockResolvedValueOnce({ username: 'testuser' });
+
+    await request(app)
+      .post('/api/user')
+      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'plaintext' });
+
+    expect(bcrypt.hash).toHaveBeenCalledWith('plaintext', 10);
+    expect(db.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ password: 'hashed_password' }),
+      })
+    );
+  });
+
   it('returns 409 when email is already taken', async () => {
     db.user.findUnique.mockResolvedValueOnce({ email: 'test@test.com' });
 

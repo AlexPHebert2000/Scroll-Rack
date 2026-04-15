@@ -46,6 +46,11 @@ describe('GET /api/scryfall/search', () => {
     expect(calledUrl).toContain(encodeURIComponent('t:creature c:red'));
   });
 
+  it('returns 400 when qString query param is missing', async () => {
+    const res = await request(app).get('/api/scryfall/search');
+    expect(res.status).toBe(400);
+  });
+
   it('returns 500 when the Scryfall API call fails', async () => {
     mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
 

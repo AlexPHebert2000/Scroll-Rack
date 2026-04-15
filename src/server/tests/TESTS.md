@@ -72,18 +72,4 @@ Tests run with Jest in a Node environment using `supertest` against the Express 
 | URL-encodes the query string before forwarding to Scryfall (regression) | Special characters ( : , + ) are percent-encoded — prevents malformed Scryfall API requests |
 | Returns 500 when the Scryfall API call fails | Network error handled gracefully |
 
----
-
-## Recommended additions
-
-The following tests are not yet written. See the [test write-up](../../client/tests/TESTS.md) for the full rationale; server-specific gaps are listed here.
-
-### `deck.test.ts` — commit records history
-The current `set` test verifies card membership is updated but does not assert that `commits: { create }` and `changes: { create: [...] }` are included in the `branch.update` call. A regression here would silently drop all commit history while the API still returns 201.
-
-### `scryfall.test.ts` — missing `qString` param
-What happens when `GET /api/scryfall/search` is called without a `qString`? The server currently forwards `undefined` to Scryfall. Desired behaviour (400 or graceful empty result) should be pinned with a test.
-
-### `user.test.ts` — password is hashed before storing
-Registration is tested for the happy-path 201 but there is no assertion that `bcrypt.hash` was called with the plaintext password. If that line were removed, passwords would be stored in plaintext and the existing test would still pass.
 
