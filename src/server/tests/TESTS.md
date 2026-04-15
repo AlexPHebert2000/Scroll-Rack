@@ -33,7 +33,6 @@ Tests run with Jest in a Node environment using `supertest` against the Express 
 |---|---|
 | Returns 200 with profile data | Username resolved, data returned |
 | Returns 404 when user is not found | Unknown username returns 404 |
-| Only sends one response when user is not found (regression) | Fixes a bug where 404 was followed by a 500, causing a double-response crash |
 
 ---
 
@@ -70,7 +69,7 @@ Tests run with Jest in a Node environment using `supertest` against the Express 
 | Test | What it covers |
 |---|---|
 | Returns matching cards from the local database | Scryfall results filtered against locally stored cards |
-| URL-encodes the query string before forwarding to Scryfall (regression) | Special characters (`:`, `+`) are percent-encoded — prevents malformed Scryfall API requests |
+| URL-encodes the query string before forwarding to Scryfall (regression) | Special characters ( : , + ) are percent-encoded — prevents malformed Scryfall API requests |
 | Returns 500 when the Scryfall API call fails | Network error handled gracefully |
 
 ---

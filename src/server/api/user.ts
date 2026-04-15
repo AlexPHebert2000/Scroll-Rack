@@ -47,27 +47,30 @@ userRouter.post("/login", async (req : Request, res : Response) => {
   const {email, password} = req.body;
   try {
     const user = await prisma.user.findUnique({where: {email}});
+
     if (!user){throw new Error("User not found")}
-    if (await bcrypt.compare(password, user.password)){
-      console.log(`USER ${user.email} LOGIN`);
-      const cookieId = randomUUID();
-      const expires = new Date(Date.now());
-      expires.setDate(expires.getDate() + 7); // Cookie Expires in 7 days
-      await prisma.session.create({
-        data: {
-          id: cookieId,
-          user: {connect: {email}},
-          expires
-        }
-      })
-      res.cookie("scroll-rack-session", cookieId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+
+    if (!await bcrypt.compare(password, user.password)){ throw new Error("Incorrect Password") }
+
+    const cookieId = randomUUID();
+    const expires = new Date(Date.now());
+    expires.setDate(expires.getDate() + 7); // Cookie Expires in 7 days
+
+    await prisma.session.create({
+      data: {
+        id: cookieId,
+        user: {connect: {email}},
         expires
-      })
-    }
-    else { throw new Error("Incorrect Password")}
+      }
+    })
+
+    res.cookie("scroll-rack-session", cookieId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      expires
+    })
+
     res.sendStatus(200);
   }
   catch(e :any){
@@ -78,7 +81,8 @@ userRouter.post("/login", async (req : Request, res : Response) => {
 
 userRouter.get("/me", async (req: Request, res: Response) => {
   const sessionId = req.cookies['scroll-rack-session'];
-  if (!sessionId) { return res.sendStatus(401); }
+  if (!sessionId) { res.sendStatus(401); return; }
+
   try {
     const session = await prisma.session.findUniqueOrThrow({
       where: {id: sessionId},
@@ -108,7 +112,7 @@ userRouter.get("/me", async (req: Request, res: Response) => {
     });
 
     if (session.expires < new Date()) {
-      return res.sendStatus(401);
+      res.sendStatus(401); return;
     }
 
     const { expires, ...sessionData } = session;

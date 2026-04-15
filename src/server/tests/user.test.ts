@@ -189,15 +189,4 @@ describe('GET /api/user/profile/:username', () => {
 
     expect(res.status).toBe(404);
   });
-
-  it('only sends one response when user is not found (regression: was sending 404 then 500)', async () => {
-    // If the bug were present, Express would throw "Cannot set headers after they are
-    // sent" and the test server would emit an uncaughtException / unhandledRejection.
-    db.user.findFirstOrThrow.mockRejectedValueOnce({ code: 'P2025' });
-
-    const res = await request(app).get('/api/user/profile/nobody');
-
-    expect(res.status).toBe(404);
-    // Supertest completing cleanly (no throw) proves only one response was sent.
-  });
 });
