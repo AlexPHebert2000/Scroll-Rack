@@ -15,10 +15,12 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 import { Card } from "./CardImage";
+import CommitHistory from "./CommitHistory";
+import type { Commit } from "./CommitHistory";
 import DecklistCards from "./DecklistCards";
 import SearchResults from "./SearchResults";
 
-interface Branch { id: string; name: string; cards: Card[]; }
+interface Branch { id: string; name: string; cards: Card[]; commits: Commit[]; }
 interface Deck { id: string; name: string; branches: Branch[]; }
 
 const Decklist = () => {
@@ -35,6 +37,7 @@ const Decklist = () => {
   const currentBranch: Branch | undefined = deck?.branches?.[0];
   const currentCards: Card[] = currentBranch?.cards ?? [];
   const branchId = currentBranch?.id;
+  const commits: Commit[] = currentBranch?.commits ?? [];
 
   // ── View mode ───────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<"list" | "images">("list");
@@ -114,6 +117,9 @@ const Decklist = () => {
     .map((cid) => queryClient.getQueryData<Card>(["card", cid])!)
     .filter(Boolean);
 
+  // ── History drawer ──────────────────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   // ── Render ──────────────────────────────────────────────────────────────────
   if (deckQ.isLoading) return <Typography>Loading…</Typography>;
   if (deckQ.isError) return <Typography color="error">Failed to load deck.</Typography>;
@@ -131,15 +137,20 @@ const Decklist = () => {
               Branch: {currentBranch?.name ?? "main"} · {currentCards.length + pendingAdds.size - pendingRemoves.size} cards
             </Typography>
           </Box>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={viewMode}
-            onChange={(_, v) => { if (v) setViewMode(v); }}
-          >
-            <ToggleButton value="list">List</ToggleButton>
-            <ToggleButton value="images">Images</ToggleButton>
-          </ToggleButtonGroup>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            <Button size="small" variant="outlined" onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={viewMode}
+              onChange={(_, v) => { if (v) setViewMode(v); }}
+            >
+              <ToggleButton value="list">List</ToggleButton>
+              <ToggleButton value="images">Images</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
         </Box>
 
         <DecklistCards
@@ -225,6 +236,15 @@ const Decklist = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ── History drawer ── */}
+      <CommitHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        branchName={currentBranch?.name ?? "main"}
+        commits={commits}
+      />
+
     </Box>
   );
 };

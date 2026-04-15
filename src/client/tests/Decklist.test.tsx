@@ -65,8 +65,8 @@ describe('Decklist', () => {
 const card1: Card = { id: 'c1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt.jpg', faces: [] };
 const card2: Card = { id: 'c2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', faces: [] };
 
-const deckWith = (cards: Card[]) => ({
-  data: { id: 'deck-1', name: 'Test Deck', branches: [{ id: 'branch-1', name: 'main', cards }] },
+const deckWith = (cards: Card[], commits = []) => ({
+  data: { id: 'deck-1', name: 'Test Deck', branches: [{ id: 'branch-1', name: 'main', cards, commits }] },
 });
 
 // ---------------------------------------------------------------------------
@@ -170,5 +170,23 @@ describe('Decklist — pending state management', () => {
     );
     await userEvent.click(screen.getAllByRole('button', { name: /remove/i })[0]);
     expect(screen.getByText('Branch: main · 1 cards')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// History drawer
+// ---------------------------------------------------------------------------
+
+describe('Decklist — history drawer', () => {
+  beforeEach(() => {
+    mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
+  });
+
+  it('opens the history drawer when the History button is clicked', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('Commit History')).toBeInTheDocument();
   });
 });
