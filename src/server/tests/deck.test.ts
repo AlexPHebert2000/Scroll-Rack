@@ -116,7 +116,36 @@ describe('GET /api/deck/:id/:branch', () => {
       expect.objectContaining({
         include: expect.objectContaining({
           branches: expect.objectContaining({
-            include: { cards: { include: { faces: true } } },
+            include: expect.objectContaining({ cards: { include: { faces: true } } }),
+          }),
+        }),
+      })
+    );
+  });
+
+  it('includes commits with changes and card names in the query', async () => {
+    db.deck.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'deck-1',
+      name: 'My Deck',
+      branches: [],
+    });
+
+    await request(app).get('/api/deck/deck-1');
+
+    expect(db.deck.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          branches: expect.objectContaining({
+            include: expect.objectContaining({
+              commits: expect.objectContaining({
+                orderBy: { createdAt: 'desc' },
+                include: {
+                  changes: {
+                    include: { card: { select: { id: true, name: true } } }
+                  }
+                },
+              }),
+            }),
           }),
         }),
       })
@@ -189,6 +218,18 @@ describe('POST /api/deck/:id/:branch', () => {
         }),
       })
     );
+  });
+
+  it('sets headCommitId to match the new commit id', async () => {
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.branch.update.mockResolvedValueOnce({});
+
+    await request(app)
+      .post('/api/deck/deck-1/branch-1')
+      .send({ description: 'test', changes: [], decklist: [] });
+
+    const callArgs = db.branch.update.mock.calls[0][0];
+    expect(callArgs.data.headCommitId).toBe(callArgs.data.commits.create.id);
   });
 
   it('records commit history with changes in the branch.update call', async () => {
