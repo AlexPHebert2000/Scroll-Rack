@@ -13,12 +13,14 @@ jest.mock('../db', () => ({
     branch: {
       update: jest.fn(),
     },
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   },
 }));
 
 const db = prisma as {
   deck: { create: jest.Mock; findUniqueOrThrow: jest.Mock; findFirstOrThrow: jest.Mock };
   branch: { update: jest.Mock };
+  $transaction: jest.Mock;
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -228,8 +230,9 @@ describe('POST /api/deck/:id/:branch', () => {
       .post('/api/deck/deck-1/branch-1')
       .send({ description: 'test', changes: [], decklist: [] });
 
-    const callArgs = db.branch.update.mock.calls[0][0];
-    expect(callArgs.data.headCommitId).toBe(callArgs.data.commits.create.id);
+    const commitCallArgs = db.branch.update.mock.calls[0][0];
+    const headCallArgs = db.branch.update.mock.calls[1][0];
+    expect(headCallArgs.data.headCommitId).toBe(commitCallArgs.data.commits.create.id);
   });
 
   it('records commit history with changes in the branch.update call', async () => {

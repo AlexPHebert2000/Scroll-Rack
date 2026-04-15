@@ -12,26 +12,28 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   const deckId = randomBytes(4).toString("base64url");
   try {
     console.log("Deck upload in progress");
-    const deckUpload = await prisma.deck.create({
-      data:{
-        id: deckId,
-        name,
-        user: {connect : {email: userId}},
-        description: description ? description : null,
+    await prisma.$transaction([
+      prisma.deck.create({
+        data:{
+          id: deckId,
+          name,
+          user: {connect : {email: userId}},
+          description: description ? description : null,
 
-        branches: {create: {
-          id : branchId,
-          commits: {create: {
-            id: commitHash,
-            description: "INIT",
+          branches: {create: {
+            id : branchId,
+            commits: {create: {
+              id: commitHash,
+              description: "INIT",
+            }}
           }}
-        }}
-      }
-    });
-    await prisma.branch.update({
-      where: {id: branchId},
-      data: {headCommitId: commitHash}
-    })
+        }
+      }),
+      prisma.branch.update({
+        where: {id: branchId},
+        data: {headCommitId: commitHash}
+      })
+    ]);
     res.sendStatus(201);
   }
   catch(e){
@@ -99,26 +101,28 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
     const newCommitId = randomBytes(4).toString("base64url");
 
     //update branch with new decklist and commit
-    await prisma.branch.update({
-      where: {id: branch},
-      data: {
-        commits: {create: {
-          id: newCommitId,
-          description,
-          changes: {
-            create: changes.map(({action, cardId}) => ({
-              action,
-              card: {connect: {id: cardId}}
-            }))
-          }
-        }},
-        cards: {connect: decklist.map(id => ({id}))}
-      }
-    });
-    await prisma.branch.update({
-      where: {id: branch},
-      data: {headCommitId: newCommitId}
-    })
+    await prisma.$transaction([
+      prisma.branch.update({
+        where: {id: branch},
+        data: {
+          commits: {create: {
+            id: newCommitId,
+            description,
+            changes: {
+              create: changes.map(({action, cardId}) => ({
+                action,
+                card: {connect: {id: cardId}}
+              }))
+            }
+          }},
+          cards: {set: decklist.map(id => ({id}))}
+        }
+      }),
+      prisma.branch.update({
+        where: {id: branch},
+        data: {headCommitId: newCommitId}
+      })
+    ]);
     res.sendStatus(201);
   }
   catch(e){
