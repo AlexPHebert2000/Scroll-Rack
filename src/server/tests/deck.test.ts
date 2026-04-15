@@ -11,7 +11,10 @@ jest.mock('../db', () => ({
       findFirstOrThrow: jest.fn(),
     },
     branch: {
+      create: jest.fn(),
       update: jest.fn(),
+      findFirstOrThrow: jest.fn(),
+      findMany: jest.fn(),
     },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   },
@@ -19,7 +22,7 @@ jest.mock('../db', () => ({
 
 const db = prisma as {
   deck: { create: jest.Mock; findUniqueOrThrow: jest.Mock; findFirstOrThrow: jest.Mock };
-  branch: { update: jest.Mock };
+  branch: { create: jest.Mock; update: jest.Mock; findFirstOrThrow: jest.Mock; findMany: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -56,7 +59,11 @@ describe('POST /api/deck', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /api/deck/:id/:branch', () => {
-  it('returns 200 with deck data', async () => {
+  beforeEach(() => {
+    db.branch.findMany.mockResolvedValue([{ id: 'branch-1', name: 'main' }]);
+  });
+
+  it('returns 200 with deck data including allBranches', async () => {
     db.deck.findUniqueOrThrow.mockResolvedValueOnce({
       id: 'deck-1',
       name: 'My Deck',
@@ -67,6 +74,7 @@ describe('GET /api/deck/:id/:branch', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe('deck-1');
+    expect(res.body.allBranches).toEqual([{ id: 'branch-1', name: 'main' }]);
   });
 
   it('filters by branch id when branch param is provided', async () => {
@@ -273,6 +281,99 @@ describe('POST /api/deck/:id/:branch', () => {
     const res = await request(app)
       .post('/api/deck/bad-deck/bad-branch')
       .send({ description: 'nope', changes: [], decklist: [] });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/deck/:id/branch — create a new branch from a historical commit
+// ---------------------------------------------------------------------------
+
+describe('POST /api/deck/:id/branch', () => {
+  const sourceBranch = {
+    id: 'branch-1',
+    commits: [
+      { id: 'commit-1', description: 'INIT',        changes: [{ action: 'add', cardId: 'card-a' }] },
+      { id: 'commit-2', description: 'Add fetchlands', changes: [{ action: 'add', cardId: 'card-b' }] },
+      { id: 'commit-3', description: 'Remove card-a',  changes: [{ action: 'remove', cardId: 'card-a' }] },
+    ],
+  };
+
+  it('returns 201 with branchId and branchName on success', async () => {
+    db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
+    db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
+
+    const res = await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'commit-2' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.branchId).toBeDefined();
+    expect(res.body.branchName).toBeDefined();
+  });
+
+  it('uses a custom branchName when provided', async () => {
+    db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
+    db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
+
+    const res = await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'commit-2', branchName: 'my-custom-branch' });
+
+    expect(res.body.branchName).toBe('my-custom-branch');
+  });
+
+  it('auto-generates a slug name from the commit description when no name given', async () => {
+    db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
+    db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
+
+    const res = await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'commit-2' });
+
+    expect(res.body.branchName).toBe('add-fetchlands');
+  });
+
+  it('seeds the new branch with the card list at the target commit', async () => {
+    db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
+    db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
+
+    await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'commit-2' });
+
+    // After commit-1 (add card-a) and commit-2 (add card-b): {card-a, card-b}
+    expect(db.branch.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          cards: { connect: expect.arrayContaining([{ id: 'card-a' }, { id: 'card-b' }]) },
+        }),
+      })
+    );
+  });
+
+  it('sets headCommitId on the new branch to the seed commit', async () => {
+    db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
+    db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
+
+    await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'commit-1' });
+
+    const createArgs = db.branch.create.mock.calls[0][0];
+    const updateArgs = db.branch.update.mock.calls[0][0];
+    expect(updateArgs.data.headCommitId).toBe(createArgs.data.commits.create.id);
+  });
+
+  it('returns 404 when sourceCommitId does not belong to the deck', async () => {
+    const notFound: any = new Error('Not found');
+    notFound.code = 'P2025';
+    db.branch.findFirstOrThrow.mockRejectedValueOnce(notFound);
+
+    const res = await request(app)
+      .post('/api/deck/deck-1/branch')
+      .send({ sourceCommitId: 'bad-commit' });
 
     expect(res.status).toBe(404);
   });
