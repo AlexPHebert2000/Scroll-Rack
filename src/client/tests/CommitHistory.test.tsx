@@ -6,6 +6,7 @@ import CommitHistory from '../components/CommitHistory';
 import type { Commit } from '../components/CommitHistory';
 
 const noOp = () => {};
+const noOpBranchFrom = jest.fn();
 
 const commit1: Commit = {
   id: 'abc1',
@@ -26,7 +27,7 @@ const commit2: Commit = {
 
 const renderHistory = (commits: Commit[] = [], open = true) =>
   render(
-    <CommitHistory open={open} onClose={noOp} branchName="main" commits={commits} />
+    <CommitHistory open={open} onClose={noOp} branchName="main" commits={commits} onBranchFrom={noOpBranchFrom} />
   );
 
 describe('CommitHistory', () => {
@@ -70,6 +71,58 @@ describe('CommitHistory', () => {
     await userEvent.click(screen.getByText('INIT'));
     expect(screen.getByText('No changes recorded.')).toBeInTheDocument();
   });
+});
 
+// ---------------------------------------------------------------------------
+// Branch here button behaviour
+// ---------------------------------------------------------------------------
 
+describe('CommitHistory — Branch here', () => {
+  beforeEach(() => noOpBranchFrom.mockClear());
+
+  it('does not show a "Branch here" button on the HEAD commit (index 0)', () => {
+    renderHistory([commit1, commit2]);
+    expect(screen.queryByRole('button', { name: /branch from add fetchlands/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a "Branch here" button on non-HEAD commits', () => {
+    renderHistory([commit1, commit2]);
+    expect(screen.getByRole('button', { name: /branch from init/i })).toBeInTheDocument();
+  });
+
+  it('opens a confirmation dialog when "Branch here" is clicked', async () => {
+    renderHistory([commit1, commit2]);
+    await userEvent.click(screen.getByRole('button', { name: /branch from init/i }));
+    expect(screen.getByText('New Branch')).toBeInTheDocument();
+  });
+
+  it('pre-fills the branch name with a slug of the commit description', async () => {
+    renderHistory([commit1, commit2]);
+    await userEvent.click(screen.getByRole('button', { name: /branch from init/i }));
+    expect(screen.getByDisplayValue('init')).toBeInTheDocument();
+  });
+
+  it('calls onBranchFrom with commitId and branchName when Create Branch is clicked', async () => {
+    renderHistory([commit1, commit2]);
+    await userEvent.click(screen.getByRole('button', { name: /branch from init/i }));
+    await userEvent.click(screen.getByRole('button', { name: /create branch/i }));
+    expect(noOpBranchFrom).toHaveBeenCalledWith({ commitId: commit2.id, branchName: 'init' });
+  });
+
+  it('allows editing the branch name before confirming', async () => {
+    renderHistory([commit1, commit2]);
+    await userEvent.click(screen.getByRole('button', { name: /branch from init/i }));
+    const input = screen.getByDisplayValue('init');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'my-custom-branch');
+    await userEvent.click(screen.getByRole('button', { name: /create branch/i }));
+    expect(noOpBranchFrom).toHaveBeenCalledWith({ commitId: commit2.id, branchName: 'my-custom-branch' });
+  });
+
+  it('does not call onBranchFrom when Cancel is clicked', async () => {
+    renderHistory([commit1, commit2]);
+    await userEvent.click(screen.getByRole('button', { name: /branch from init/i }));
+    await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(noOpBranchFrom).not.toHaveBeenCalled();
+  });
 });
