@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import TextField from "@mui/material/TextField";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -21,16 +23,17 @@ import DecklistCards from "./DecklistCards";
 import SearchResults from "./SearchResults";
 
 interface Branch { id: string; name: string; cards: Card[]; commits: Commit[]; }
-interface Deck { id: string; name: string; branches: Branch[]; }
+interface Deck { id: string; name: string; branches: Branch[]; allBranches: { id: string; name: string }[]; }
 
 const Decklist = () => {
-  const { id } = useParams();
+  const { id, branch } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // ── Deck fetch ──────────────────────────────────────────────────────────────
   const deckQ = useQuery<{ data: Deck }>({
-    queryKey: ["deckFetch", id],
-    queryFn: () => axios.get(`/api/deck/${id}`),
+    queryKey: ["deckFetch", id, branch],
+    queryFn: () => axios.get(`/api/deck/${id}${branch ? `/${branch}` : ''}`),
   });
 
   const deck: Deck | undefined = deckQ.data?.data;
@@ -120,6 +123,15 @@ const Decklist = () => {
   // ── History drawer ──────────────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  const branchMutation = useMutation({
+    mutationFn: ({ sourceCommitId, branchName }: { sourceCommitId: string; branchName: string }) =>
+      axios.post(`/api/deck/${id}/branch`, { sourceCommitId, branchName }),
+    onSuccess: ({ data }) => {
+      queryClient.invalidateQueries({ queryKey: ["deckFetch", id] });
+      navigate(`/deck/${id}/${data.branchId}`);
+    },
+  });
+
   // ── Render ──────────────────────────────────────────────────────────────────
   if (deckQ.isLoading) return <Typography>Loading…</Typography>;
   if (deckQ.isError) return <Typography color="error">Failed to load deck.</Typography>;
@@ -133,9 +145,21 @@ const Decklist = () => {
         <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <Box>
             <Typography variant="h5">{deck?.name}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Branch: {currentBranch?.name ?? "main"} · {currentCards.length + pendingAdds.size - pendingRemoves.size} cards
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
+              <Select
+                size="small"
+                value={branch ?? currentBranch?.id ?? ""}
+                onChange={(e) => navigate(`/deck/${id}/${e.target.value}`)}
+                sx={{ fontSize: "0.75rem", height: 24 }}
+              >
+                {(deck?.allBranches ?? []).map((b) => (
+                  <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>
+                ))}
+              </Select>
+              <Typography variant="caption" color="text.secondary">
+                {currentCards.length + pendingAdds.size - pendingRemoves.size} cards
+              </Typography>
+            </Box>
           </Box>
           <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
             <Button size="small" variant="outlined" onClick={() => setHistoryOpen(true)}>
@@ -243,6 +267,8 @@ const Decklist = () => {
         onClose={() => setHistoryOpen(false)}
         branchName={currentBranch?.name ?? "main"}
         commits={commits}
+        onBranchFrom={({ commitId, branchName }) => branchMutation.mutate({ sourceCommitId: commitId, branchName })}
+        isBranching={branchMutation.isPending}
       />
 
     </Box>

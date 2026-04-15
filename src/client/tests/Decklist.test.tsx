@@ -35,9 +35,9 @@ const renderDecklist = () => {
 };
 
 describe('Decklist', () => {
-  it('always fetches /api/deck/:id (main branch hardcoded on client)', async () => {
+  it('fetches /api/deck/:id when no branch param is present (defaults to main)', async () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [] } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [] } });
 
     renderDecklist();
 
@@ -46,14 +46,14 @@ describe('Decklist', () => {
     );
   });
 
-  it('ignores branch URL param and always calls /api/deck/:id', async () => {
+  it('fetches /api/deck/:id/:branch when branch URL param is present', async () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-abc', commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [] } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [] } });
 
     renderDecklist();
 
     await waitFor(() =>
-      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1')
+      expect(mockedAxios.get).toHaveBeenCalledWith('/api/deck/deck-1/branch-abc')
     );
   });
 });
@@ -66,7 +66,12 @@ const card1: Card = { id: 'c1', name: 'Lightning Bolt', imageUrl: 'https://examp
 const card2: Card = { id: 'c2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', faces: [] };
 
 const deckWith = (cards: Card[], commits = []) => ({
-  data: { id: 'deck-1', name: 'Test Deck', branches: [{ id: 'branch-1', name: 'main', cards, commits }] },
+  data: {
+    id: 'deck-1',
+    name: 'Test Deck',
+    branches: [{ id: 'branch-1', name: 'main', cards, commits }],
+    allBranches: [{ id: 'branch-1', name: 'main' }],
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -166,10 +171,10 @@ describe('Decklist — pending state management', () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1, card2]));
     renderDecklist();
     await waitFor(() =>
-      expect(screen.getByText('Branch: main · 2 cards')).toBeInTheDocument()
+      expect(screen.getByText('2 cards')).toBeInTheDocument()
     );
     await userEvent.click(screen.getAllByRole('button', { name: /remove/i })[0]);
-    expect(screen.getByText('Branch: main · 1 cards')).toBeInTheDocument();
+    expect(screen.getByText('1 cards')).toBeInTheDocument();
   });
 });
 
