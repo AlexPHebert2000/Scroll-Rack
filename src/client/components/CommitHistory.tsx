@@ -120,9 +120,9 @@ const CommitHistory = ({ open, onClose, branchName, commits, onBranchFrom, isBra
                                 key={`${change.action}-${change.card.id}`}
                                 variant="caption"
                                 display="block"
-                                color={change.action === "add" ? "success.main" : "error.main"}
+                                color={change.action === "ADD" ? "success.main" : "error.main"}
                               >
-                                {change.action === "add" ? "+ " : "− "}{change.card.name}
+                                {change.action === "ADD" ? "+ " : "− "}{change.card.name}
                               </Typography>
                             ))
                           )}
