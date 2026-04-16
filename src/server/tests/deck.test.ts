@@ -16,6 +16,9 @@ jest.mock('../db', () => ({
       findFirstOrThrow: jest.fn(),
       findMany: jest.fn(),
     },
+    decklist: {
+      update: jest.fn(),
+    },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   },
 }));
@@ -23,6 +26,7 @@ jest.mock('../db', () => ({
 const db = prisma as {
   deck: { create: jest.Mock; findUniqueOrThrow: jest.Mock; findFirstOrThrow: jest.Mock };
   branch: { create: jest.Mock; update: jest.Mock; findFirstOrThrow: jest.Mock; findMany: jest.Mock };
+  decklist: { update: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -113,7 +117,7 @@ describe('GET /api/deck/:id/:branch', () => {
     );
   });
 
-  it('includes card faces in the query', async () => {
+  it('includes card faces via decklist in the query', async () => {
     db.deck.findUniqueOrThrow.mockResolvedValueOnce({
       id: 'deck-1',
       name: 'My Deck',
@@ -126,7 +130,14 @@ describe('GET /api/deck/:id/:branch', () => {
       expect.objectContaining({
         include: expect.objectContaining({
           branches: expect.objectContaining({
-            include: expect.objectContaining({ cards: { include: { faces: true } } }),
+            include: expect.objectContaining({
+              decklist: {
+                include: {
+                  mainDeck: { include: { faces: true } },
+                  sideBoard: { include: { faces: true } },
+                },
+              },
+            }),
           }),
         }),
       })
@@ -180,15 +191,17 @@ describe('GET /api/deck/:id/:branch', () => {
 
 describe('POST /api/deck/:id/:branch', () => {
   it('returns 201 on successful commit', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
     db.branch.update.mockResolvedValueOnce({});
+    db.decklist.update.mockResolvedValueOnce({});
 
     const res = await request(app)
       .post('/api/deck/deck-1/branch-1')
       .send({
         description: 'Add some cards',
-        changes: [{ action: 'add', cardId: 'card-1' }],
-        decklist: ['card-1'],
+        changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-1' }],
+        mainDeck: ['card-1'],
+        sideBoard: [],
       });
 
     expect(res.status).toBe(201);
@@ -197,46 +210,51 @@ describe('POST /api/deck/:id/:branch', () => {
   it('uses the branch id (not deck id) when updating (regression)', async () => {
     // This test ensures branch.update is called with the branch id from the URL
     // and not accidentally with the deck id.
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-abc' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-abc', decklistId: 'dlist-1' }] });
     db.branch.update.mockResolvedValueOnce({});
+    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-abc')
-      .send({ description: 'fix', changes: [], decklist: [] });
+      .send({ description: 'fix', changes: [], mainDeck: [], sideBoard: [] });
 
     expect(db.branch.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'branch-abc' } })
     );
   });
 
-  it('uses set (not connect) when updating cards so removals are applied', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+  it('uses set (not connect) on the decklist when updating cards so removals are applied', async () => {
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
     db.branch.update.mockResolvedValueOnce({});
+    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
       .send({
         description: 'Remove a card',
-        changes: [{ action: 'remove', cardId: 'card-old' }],
-        decklist: ['card-keep'],
+        changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'card-old' }],
+        mainDeck: ['card-keep'],
+        sideBoard: [],
       });
 
-    expect(db.branch.update).toHaveBeenCalledWith(
+    expect(db.decklist.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          cards: { set: [{ id: 'card-keep' }] },
+          mainDeck: { set: [{ id: 'card-keep' }] },
+          sideBoard: { set: [] },
         }),
       })
     );
   });
 
   it('sets headCommitId to match the new commit id', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
     db.branch.update.mockResolvedValueOnce({});
+    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
-      .send({ description: 'test', changes: [], decklist: [] });
+      .send({ description: 'test', changes: [], mainDeck: [], sideBoard: [] });
 
     const commitCallArgs = db.branch.update.mock.calls[0][0];
     const headCallArgs = db.branch.update.mock.calls[1][0];
@@ -244,15 +262,17 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('records commit history with changes in the branch.update call', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
     db.branch.update.mockResolvedValueOnce({});
+    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
       .send({
         description: 'Add a card',
-        changes: [{ action: 'add', cardId: 'card-1' }],
-        decklist: ['card-1'],
+        changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-1' }],
+        mainDeck: ['card-1'],
+        sideBoard: [],
       });
 
     expect(db.branch.update).toHaveBeenCalledWith(
@@ -263,7 +283,7 @@ describe('POST /api/deck/:id/:branch', () => {
               description: 'Add a card',
               changes: {
                 create: expect.arrayContaining([
-                  expect.objectContaining({ action: 'add' }),
+                  expect.objectContaining({ action: 'ADD', board: 'MAIN' }),
                 ]),
               },
             }),
@@ -280,7 +300,7 @@ describe('POST /api/deck/:id/:branch', () => {
 
     const res = await request(app)
       .post('/api/deck/bad-deck/bad-branch')
-      .send({ description: 'nope', changes: [], decklist: [] });
+      .send({ description: 'nope', changes: [], mainDeck: [], sideBoard: [] });
 
     expect(res.status).toBe(404);
   });
@@ -294,9 +314,9 @@ describe('POST /api/deck/:id/branch', () => {
   const sourceBranch = {
     id: 'branch-1',
     commits: [
-      { id: 'commit-1', description: 'INIT',        changes: [{ action: 'add', cardId: 'card-a' }] },
-      { id: 'commit-2', description: 'Add fetchlands', changes: [{ action: 'add', cardId: 'card-b' }] },
-      { id: 'commit-3', description: 'Remove card-a',  changes: [{ action: 'remove', cardId: 'card-a' }] },
+      { id: 'commit-1', description: 'INIT',           changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-a' }] },
+      { id: 'commit-2', description: 'Add fetchlands',  changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-b' }] },
+      { id: 'commit-3', description: 'Remove card-a',   changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'card-a' }] },
     ],
   };
 
@@ -335,7 +355,7 @@ describe('POST /api/deck/:id/branch', () => {
     expect(res.body.branchName).toBe('add-fetchlands');
   });
 
-  it('seeds the new branch with the card list at the target commit', async () => {
+  it('seeds the new branch decklist with the card list at the target commit', async () => {
     db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
     db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
 
@@ -347,7 +367,11 @@ describe('POST /api/deck/:id/branch', () => {
     expect(db.branch.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          cards: { connect: expect.arrayContaining([{ id: 'card-a' }, { id: 'card-b' }]) },
+          decklist: {
+            create: expect.objectContaining({
+              mainDeck: { connect: expect.arrayContaining([{ id: 'card-a' }, { id: 'card-b' }]) },
+            }),
+          },
         }),
       })
     );

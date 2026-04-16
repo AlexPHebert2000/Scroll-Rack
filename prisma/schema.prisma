@@ -9,13 +9,13 @@ datasource db {
 }
 
 model Card {
-  id       String     @id
-  name     String
-  imageUrl String?
-  faces    CardFace[]
-  decks     Branch[]
+  id        String     @id
+  name      String
+  imageUrl  String?
+  faces     CardFace[]
+  mainDecks Decklist[] @relation("CardToDecklistMain")
+  sideBoards Decklist[] @relation("CardToDecklistSide")
   Change    Change[]
-  snapShots SnapShot[] @relation("CardToSnapshot")
 }
 
 model CardFace {
@@ -23,6 +23,7 @@ model CardFace {
   name     String
   imageUrl String?
   card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
   @@id([cardId, name])
 }
 
@@ -56,7 +57,15 @@ model Deck {
   updatedAt   DateTime @updatedAt
   description String?
   user        User     @relation(fields: [userEmail], references: [email], onDelete: Cascade) // A deck belongs to a user
-  branches Branch[] // A deck can have multiple branches for version control
+  branches    Branch[] // A deck can have multiple branches for version control
+}
+
+model Decklist {
+  id       String    @id
+  mainDeck Card[]    @relation("CardToDecklistMain")
+  sideBoard Card[]   @relation("CardToDecklistSide")
+  branch   Branch?
+  snapShot SnapShot?
 }
 
 model Branch {
@@ -64,36 +73,51 @@ model Branch {
   name         String   @default("main")
   deckId       String
   deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
-  cards        Card[]
+  decklistId   String   @unique
+  decklist     Decklist @relation(fields: [decklistId], references: [id])
   commits      Commit[]
+  headCommitId String?  @unique @db.Char(10)
   headCommit   Commit?  @relation(name: "HEAD", fields: [headCommitId], references: [id])
-  headCommitId String?  @db.Char(10) @unique
 }
 
 model Commit {
-  id           String   @unique @id @db.Char(10)
+  id           String    @id @unique @db.Char(10)
   description  String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   branchId     String
   changes      Change[]
-  headBranchOf Branch?  @relation(name: "HEAD")
-  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  headBranchOf Branch?   @relation(name: "HEAD")
+  branch       Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
   snapshot     SnapShot?
 }
 
 model SnapShot {
-  id String @db.Char(10) @id
-  commit Commit @relation(fields: [commitID], references: [id])
-  commitID String @unique
-  card Card[] @relation("CardToSnapshot")
+  id         String   @id @db.Char(10)
+  commit     Commit   @relation(fields: [commitID], references: [id])
+  commitID   String   @unique
+  decklistId String   @unique
+  decklist   Decklist @relation(fields: [decklistId], references: [id])
 }
 
 model Change {
-  action         String
-  commitId       String
-  cardId         String
-  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  commit         Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
+  action   Action
+  board    Board
+  commitId String
+  cardId   String
+  card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  commit   Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
 
   @@id([action, cardId, commitId])
+}
+
+enum Action {
+  ADD
+  REMOVE
+}
+
+enum Board {
+  MAIN
+  SIDE
+  COMMANDER
+  CONSIDERING
 }

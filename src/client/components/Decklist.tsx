@@ -22,7 +22,8 @@ import type { Commit } from "./CommitHistory";
 import DecklistCards from "./DecklistCards";
 import SearchResults from "./SearchResults";
 
-interface Branch { id: string; name: string; cards: Card[]; commits: Commit[]; }
+interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; }
+interface Branch { id: string; name: string; decklist: DecklistState; commits: Commit[]; }
 interface Deck { id: string; name: string; branches: Branch[]; allBranches: { id: string; name: string }[]; }
 
 const Decklist = () => {
@@ -38,7 +39,7 @@ const Decklist = () => {
 
   const deck: Deck | undefined = deckQ.data?.data;
   const currentBranch: Branch | undefined = deck?.branches?.[0];
-  const currentCards: Card[] = currentBranch?.cards ?? [];
+  const currentCards: Card[] = currentBranch?.decklist?.mainDeck ?? [];
   const branchId = currentBranch?.id;
   const commits: Commit[] = currentBranch?.commits ?? [];
 
@@ -89,8 +90,9 @@ const Decklist = () => {
   const commitMutation = useMutation({
     mutationFn: (payload: {
       description: string;
-      changes: { action: string; cardId: string }[];
-      decklist: string[];
+      changes: { action: string; board: string; cardId: string }[];
+      mainDeck: string[];
+      sideBoard: string[];
     }) => axios.post(`/api/deck/${id}/${branchId}`, payload),
     onSuccess: () => {
       setPendingAdds(new Set());
@@ -103,15 +105,15 @@ const Decklist = () => {
 
   const handleCommit = () => {
     const changes = [
-      ...[...pendingAdds].map((cardId) => ({ action: "add", cardId })),
-      ...[...pendingRemoves].map((cardId) => ({ action: "remove", cardId })),
+      ...[...pendingAdds].map((cardId) => ({ action: "ADD", board: "MAIN", cardId })),
+      ...[...pendingRemoves].map((cardId) => ({ action: "REMOVE", board: "MAIN", cardId })),
     ];
 
     const newDeckIds = new Set(currentCards.map((c) => c.id));
     pendingAdds.forEach((cid) => newDeckIds.add(cid));
     pendingRemoves.forEach((cid) => newDeckIds.delete(cid));
 
-    commitMutation.mutate({ description: commitDesc, changes, decklist: [...newDeckIds] });
+    commitMutation.mutate({ description: commitDesc, changes, mainDeck: [...newDeckIds], sideBoard: [] });
   };
 
   // Pending adds that aren't already in the current deck

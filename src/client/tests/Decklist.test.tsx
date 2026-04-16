@@ -69,7 +69,7 @@ const deckWith = (cards: Card[], commits = []) => ({
   data: {
     id: 'deck-1',
     name: 'Test Deck',
-    branches: [{ id: 'branch-1', name: 'main', cards, commits }],
+    branches: [{ id: 'branch-1', name: 'main', decklist: { mainDeck: cards, sideBoard: [] }, commits }],
     allBranches: [{ id: 'branch-1', name: 'main' }],
   },
 });
@@ -121,8 +121,9 @@ describe('Decklist — commit flow', () => {
 
     expect(mockedAxios.post).toHaveBeenCalledWith('/api/deck/deck-1/branch-1', {
       description: 'Remove a card',
-      changes: [{ action: 'remove', cardId: 'c1' }],
-      decklist: [],
+      changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'c1' }],
+      mainDeck: [],
+      sideBoard: [],
     });
 
     // Dialog closes and commit button disappears (pending state cleared)

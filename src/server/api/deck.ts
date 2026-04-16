@@ -10,6 +10,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
   const commitHash = randomBytes(4).toString("base64url");
   const branchId = randomBytes(4).toString("base64url");
   const deckId = randomBytes(4).toString("base64url");
+  const decklistId = randomBytes(4).toString("base64url");
   try {
     console.log("Deck upload in progress");
     await prisma.$transaction([
@@ -22,6 +23,7 @@ deckRouter.post("/", async (req : Request, res : Response) => {
 
           branches: {create: {
             id : branchId,
+            decklist: { create: { id: decklistId } },
             commits: {create: {
               id: commitHash,
               description: "INIT",
@@ -68,7 +70,7 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
     const targetCards = new Set<string>();
     for (let i = 0; i <= targetIndex; i++) {
       for (const change of sourceBranch.commits[i].changes) {
-        if (change.action === 'add') targetCards.add(change.cardId);
+        if (change.action === 'ADD') targetCards.add(change.cardId);
         else targetCards.delete(change.cardId);
       }
     }
@@ -79,6 +81,7 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
 
     const newBranchId = randomBytes(4).toString("base64url");
     const seedCommitId = randomBytes(4).toString("base64url");
+    const newDecklistId = randomBytes(4).toString("base64url");
 
     await prisma.$transaction([
       prisma.branch.create({
@@ -86,14 +89,20 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
           id: newBranchId,
           name: branchName,
           deck: { connect: { id } },
-          cards: { connect: [...targetCards].map(cid => ({ id: cid })) },
+          decklist: {
+            create: {
+              id: newDecklistId,
+              mainDeck: { connect: [...targetCards].map(cid => ({ id: cid })) },
+            },
+          },
           commits: {
             create: {
               id: seedCommitId,
               description: `Branched from "${sourceDescription}"`,
               changes: {
                 create: [...targetCards].map(cardId => ({
-                  action: 'add',
+                  action: 'ADD',
+                  board: 'MAIN',
                   card: { connect: { id: cardId } },
                 })),
               },
@@ -127,7 +136,12 @@ deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
         branches: {
           where: branch ? { id: branch } : { name: "main" },
           include:{
-            cards: { include: { faces: true } },
+            decklist: {
+              include: {
+                mainDeck: { include: { faces: true } },
+                sideBoard: { include: { faces: true } },
+              },
+            },
             commits: {
               orderBy: { createdAt: 'desc' },
               include: {
@@ -162,11 +176,11 @@ deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
 
 deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
   const {id, branch} = req.params;
-  const {changes, description, decklist} : {changes : {action: string, cardId: string}[], description : string, decklist : string[]}= req.body;
+  const {changes, description, mainDeck, sideBoard} : {changes : {action: string, board: string, cardId: string}[], description : string, mainDeck : string[], sideBoard: string[]}= req.body;
 
   try{
-    // Check for deck + branch in db
-    await prisma.deck.findFirstOrThrow({
+    // Check for deck + branch in db, and get the branch's decklistId
+    const foundDeck = await prisma.deck.findFirstOrThrow({
       where:{
         id
       },
@@ -174,10 +188,12 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
         branches:{
           where:{
             id: branch
-          }
+          },
+          select: { id: true, decklistId: true }
         }
       }
     });
+    const decklistId = foundDeck.branches[0].decklistId;
 
     const newCommitId = randomBytes(4).toString("base64url");
 
@@ -190,13 +206,20 @@ deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
             id: newCommitId,
             description,
             changes: {
-              create: changes.map(({action, cardId}) => ({
+              create: changes.map(({action, board, cardId}) => ({
                 action,
+                board,
                 card: {connect: {id: cardId}}
               }))
             }
           }},
-          cards: {set: decklist.map(id => ({id}))}
+        }
+      }),
+      prisma.decklist.update({
+        where: {id: decklistId},
+        data: {
+          mainDeck: {set: mainDeck.map(id => ({id}))},
+          sideBoard: {set: sideBoard.map(id => ({id}))},
         }
       }),
       prisma.branch.update({
