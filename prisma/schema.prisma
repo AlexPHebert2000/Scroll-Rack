@@ -9,20 +9,28 @@ datasource db {
 }
 
 model Card {
-  id        String     @id
-  name      String
-  imageUrl  String?
-  faces     CardFace[]
-  mainDecks Decklist[] @relation("CardToDecklistMain")
+  id         String     @id
+  name       String
+  imageUrl   String?
+  typeLine   String?
+  cmc        Float?
+  oracleText String?
+  layout     String?
+  faces      CardFace[]
+  mainDecks  Decklist[] @relation("CardToDecklistMain")
   sideBoards Decklist[] @relation("CardToDecklistSide")
-  Change    Change[]
+  Change     Change[]
 }
 
 model CardFace {
-  cardId   String
-  name     String
-  imageUrl String?
-  card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId     String
+  name       String
+  imageUrl   String?
+  typeLine   String?
+  cmc        Float?
+  oracleText String?
+  layout     String?
+  card       Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@id([cardId, name])
 }
