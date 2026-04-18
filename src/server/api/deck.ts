@@ -172,44 +172,6 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
   }
 });
 
-deckRouter.get("/:id/:branch/analytics", requireAuth, async (req: Request, res: Response) => {
-  const { id, branch } = req.params;
-
-  try {
-    const foundBranch = await prisma.branch.findFirstOrThrow({
-      where: { deckId: id, id: branch, deck: { userEmail: req.userEmail } },
-      include: { decklist: true },
-    });
-
-    const { mainDeckIds, commanderIds } = foundBranch.decklist;
-    const allIds = [...mainDeckIds, ...commanderIds];
-    const cardMap = await resolveCards(allIds);
-    const allCards = allIds.map(id => cardMap.get(id)).filter(Boolean) as any[];
-
-    function getOracleText(card: any): string {
-      if (card.oracleText) return card.oracleText;
-      return card.faces?.map((f: any) => f.oracleText ?? '').join('\n') ?? '';
-    }
-
-    let ramp = 0, draw = 0, removal = 0;
-
-    for (const card of allCards) {
-      const text = getOracleText(card).toLowerCase();
-      if (/add \{/.test(text) || /search.*library.*land/.test(text) || /put.*land.*into play/.test(text)) ramp++;
-      if (/draw a card/.test(text) || /draw \d+ cards/.test(text)) draw++;
-      if (/destroy target/.test(text) || /exile target/.test(text) || /deal \d+ damage to target creature/.test(text)) removal++;
-    }
-
-    res.json({ ramp, draw, removal, total: allCards.length });
-  } catch (e: any) {
-    if (e.code === 'P2025') {
-      res.status(404).json({ error: "Branch not found" });
-    } else {
-      console.log(`Failed to compute analytics : ${e.message}`);
-      res.status(500).json({ error: "Failed to compute analytics" });
-    }
-  }
-});
 
 deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response) => {
   const { id, branch } = req.params;
