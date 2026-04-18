@@ -3,48 +3,51 @@ import type { Request, Response } from "express";
 import prisma from '../db.js';
 import bcrypt from 'bcrypt';
 import { randomUUID } from "crypto";
+import { z } from 'zod';
+
+const registerSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/, 'Username may only contain letters, numbers, and underscores'),
+  password: z.string().min(8),
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
 
 const userRouter = Router();
 
-userRouter.post("/", async (req : Request, res : Response) => {
-  const {name, email, username, password} = req.body;
+userRouter.post("/", async (req: Request, res: Response) => {
+  const parsed = registerSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
-  try{
+  const { name, email, username, password } = parsed.data;
 
-    // Check for existing user using the given email
-    let exsistingUser = await prisma.user.findUnique({where:{email}});
-    if (exsistingUser){throw new Error("Email Exists")}
+  try {
+    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingEmail) { res.status(409).json({ error: `Email ${email} already in use` }); return; }
 
-    const existingUsername = await prisma.user.findUnique({where:{username}})
-    if (existingUsername){throw new Error("Username Exists")}
+    const existingUsername = await prisma.user.findUnique({ where: { username } });
+    if (existingUsername) { res.status(409).json({ error: `Username ${username} already taken` }); return; }
 
-    const user = await prisma.user.create({
-      data:{
-        username,
-        email,
-        name,
-        password : await bcrypt.hash(password, 10)
-      }
+    await prisma.user.create({
+      data: { username, email, name, password: await bcrypt.hash(password, 10) },
     });
 
     res.sendStatus(201);
-  }
-  catch(e :any){
+  } catch (e: any) {
     console.log(`Error creating user : ${e.message}`);
-    if (e.message == "Username Exists"){
-      res.status(409).json({error: `Failed to create user: Username ${username} already exists`});
-    }
-    if (e.message == "Email Exists"){
-      res.status(409).json({error: `Failed to create user: Email ${email} already exists`});
-    }
-    else{
-      res.status(500).json({error : "Failed to create user"});
-    }
+    res.status(500).json({ error: "Failed to create user" });
   }
 })
 
-userRouter.post("/login", async (req : Request, res : Response) => {
-  const {email, password} = req.body;
+userRouter.post("/login", async (req: Request, res: Response) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { email, password } = parsed.data;
   try {
     const user = await prisma.user.findUnique({where: {email}});
 

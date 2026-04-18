@@ -2,11 +2,12 @@ import axios from 'axios';
 import prisma from '../db.js';
 
 const CHUNK_SIZE = 500;
-const CONCURRENCY = 4; // chunks processed in parallel — keep low for Neon's pooled connection limit
+const CONCURRENCY = 4;
 
 type SlimCard = {
   id: string; name: string; imageUrl: string | null;
-  typeLine: string | null; cmc: number | null; oracleText: string | null; layout: string | null;
+  typeLine: string | null; cmc: number | null; oracleText: string | null;
+  layout: string | null; tags: string[];
 };
 type SlimFace = {
   cardId: string; name: string; imageUrl: string | null;
@@ -19,22 +20,41 @@ function chunks<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function computeTags(oracleText: string | null, faceTexts: (string | null)[]): string[] {
+  const all = [oracleText, ...faceTexts].filter(Boolean).join('\n').toLowerCase();
+  const tags: string[] = [];
+  if (/add \{/.test(all) || /search.*library.*land/.test(all) || /put.*land.*into play/.test(all)) tags.push('ramp');
+  if (/draw a card/.test(all) || /draw \d+ cards/.test(all)) tags.push('draw');
+  if (/destroy target/.test(all) || /exile target/.test(all) || /deal \d+ damage to target creature/.test(all)) tags.push('removal');
+  return tags;
+}
+
 export default async () => {
   console.log('Starting card download... Please Wait');
   console.time('Upload time');
 
   const { data } = await axios.get('https://api.scryfall.com/bulk-data');
-  const rawData: any[] = (await axios.get(data.data[0].download_uri)).data;
+  const bulkEntry = data.data.find((e: any) => e.type === 'default_cards');
+  if (!bulkEntry) throw new Error('default_cards bulk entry not found in Scryfall response');
 
-  // Project to slim objects immediately so the full Scryfall payloads
-  // (prices, legalities, URIs…) can be garbage-collected.
-  // Faces are collected separately so they can be bulk-inserted after
-  // all parent cards are in the DB.
+  const rawData: any[] = (await axios.get(bulkEntry.download_uri)).data;
+
+  // Collect face texts per card so we can compute tags before inserting
+  const faceTextsByCard = new Map<string, (string | null)[]>();
+  for (const card of rawData) {
+    if (card.layout === 'art_series' || card.layout === 'token') continue;
+    const faceTexts = (card.card_faces ?? []).map((f: any) => f.oracle_text ?? null);
+    if (faceTexts.length > 0) faceTextsByCard.set(card.id, faceTexts);
+  }
+
   const cards: SlimCard[] = [];
   const faces: SlimFace[] = [];
 
   for (const card of rawData) {
     if (card.layout === 'art_series' || card.layout === 'token') continue;
+
+    const oracleText = card.oracle_text ?? null;
+    const faceTexts = faceTextsByCard.get(card.id) ?? [];
 
     cards.push({
       id: card.id,
@@ -42,8 +62,9 @@ export default async () => {
       imageUrl: card.image_uris?.normal ?? null,
       typeLine: card.type_line ?? null,
       cmc: card.cmc ?? null,
-      oracleText: card.oracle_text ?? null,
+      oracleText,
       layout: card.layout ?? null,
+      tags: computeTags(oracleText, faceTexts),
     });
 
     for (const face of card.card_faces ?? []) {
@@ -63,8 +84,6 @@ export default async () => {
   console.log('Uploading to the database...');
 
   // ── Cards ──────────────────────────────────────────────────────────────────
-  // createMany compiles to a single INSERT … ON CONFLICT DO NOTHING per chunk,
-  // replacing the previous pattern of 500 individual upserts per chunk.
   const cardChunks = chunks(cards, CHUNK_SIZE);
   let cardCount = 0;
   for (let i = 0; i < cardChunks.length; i += CONCURRENCY) {
@@ -79,7 +98,6 @@ export default async () => {
   console.log(`Inserted ${cardCount} new cards (${cards.length - cardCount} already existed)`);
 
   // ── Faces ──────────────────────────────────────────────────────────────────
-  // All cards must be committed before faces are inserted (foreign key).
   const faceChunks = chunks(faces, CHUNK_SIZE);
   let faceCount = 0;
   for (let i = 0; i < faceChunks.length; i += CONCURRENCY) {

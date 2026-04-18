@@ -31,7 +31,8 @@
     "react-router-dom": "^7.9.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
-    "vite-express": "*"
+    "vite-express": "*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
