@@ -81,29 +81,41 @@ export default async () => {
   }
 
   console.log(`Retrieved ${cards.length} cards (${faces.length} faces)`);
+
+  // MongoDB's Prisma client does not support skipDuplicates on createMany.
+  // Pre-filter to only documents that don't already exist in the DB.
+  const existingIds = new Set(
+    (await prisma.card.findMany({ select: { id: true } })).map(c => c.id)
+  );
+  const newCards = cards.filter(c => !existingIds.has(c.id));
+  // Faces: only insert faces belonging to cards we're about to insert
+  const newCardIds = new Set(newCards.map(c => c.id));
+  const newFaces = faces.filter(f => newCardIds.has(f.cardId));
+
+  console.log(`${newCards.length} new cards to insert (${cards.length - newCards.length} already exist)`);
   console.log('Uploading to the database...');
 
   // ── Cards ──────────────────────────────────────────────────────────────────
-  const cardChunks = chunks(cards, CHUNK_SIZE);
+  const cardChunks = chunks(newCards, CHUNK_SIZE);
   let cardCount = 0;
   for (let i = 0; i < cardChunks.length; i += CONCURRENCY) {
     const results = await Promise.all(
       cardChunks.slice(i, i + CONCURRENCY).map(chunk =>
-        prisma.card.createMany({ data: chunk, skipDuplicates: true })
+        prisma.card.createMany({ data: chunk })
       )
     );
     cardCount += results.reduce((sum, r) => sum + r.count, 0);
-    console.log(`Cards: ${Math.min((i + CONCURRENCY) * CHUNK_SIZE, cards.length)} / ${cards.length}`);
+    console.log(`Cards: ${Math.min((i + CONCURRENCY) * CHUNK_SIZE, newCards.length)} / ${newCards.length}`);
   }
-  console.log(`Inserted ${cardCount} new cards (${cards.length - cardCount} already existed)`);
+  console.log(`Inserted ${cardCount} new cards`);
 
   // ── Faces ──────────────────────────────────────────────────────────────────
-  const faceChunks = chunks(faces, CHUNK_SIZE);
+  const faceChunks = chunks(newFaces, CHUNK_SIZE);
   let faceCount = 0;
   for (let i = 0; i < faceChunks.length; i += CONCURRENCY) {
     const results = await Promise.all(
       faceChunks.slice(i, i + CONCURRENCY).map(chunk =>
-        prisma.cardFace.createMany({ data: chunk, skipDuplicates: true })
+        prisma.cardFace.createMany({ data: chunk })
       )
     );
     faceCount += results.reduce((sum, r) => sum + r.count, 0);
