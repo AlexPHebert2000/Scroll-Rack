@@ -4,25 +4,26 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
+// Scryfall cards — id is the Scryfall UUID (not an ObjectId)
 model Card {
-  id         String     @id
+  id         String     @id @map("_id")
   name       String
   imageUrl   String?
   typeLine   String?
   cmc        Float?
   oracleText String?
   layout     String?
+  tags       String[]   @default([])
   faces      CardFace[]
-  mainDecks  Decklist[] @relation("CardToDecklistMain")
-  sideBoards Decklist[] @relation("CardToDecklistSide")
-  Change     Change[]
+  changes    Change[]
 }
 
 model CardFace {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
   cardId     String
   name       String
   imageUrl   String?
@@ -30,92 +31,96 @@ model CardFace {
   cmc        Float?
   oracleText String?
   layout     String?
-  card       Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  card       Card    @relation(fields: [cardId], references: [id])
 
-  @@id([cardId, name])
+  @@unique([cardId, name])
 }
 
 model User {
-  email     String    @id @unique
-  username  String    @unique
+  email     String    @id @map("_id")
+  username  String
   name      String
   password  String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  decks     Deck[] // A user can have multiple decks
-  sessions  Session[] // A user can have multiple sessions
+  decks     Deck[] 
+  sessions  Session[]
 
   @@index([username])
 }
 
 model Session {
-  id        String   @id
-  user      User     @relation(fields: [userEmail], references: [email])
+  id        String   @id @map("_id")
   userEmail String
   createdAt DateTime @default(now())
   lastSeen  DateTime @default(now())
   expires   DateTime
+  user      User     @relation(fields: [userEmail], references: [email])
 }
 
 model Deck {
-  id          String   @id
+  id          String   @id @map("_id")
   name        String
   userEmail   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   description String?
-  user        User     @relation(fields: [userEmail], references: [email], onDelete: Cascade) // A deck belongs to a user
-  branches    Branch[] // A deck can have multiple branches for version control
+  user        User     @relation(fields: [userEmail], references: [email])
+  branches    Branch[]
 }
 
+// Card lists stored as ID arrays — resolved to Card documents in application code
 model Decklist {
-  id       String    @id
-  mainDeck Card[]    @relation("CardToDecklistMain")
-  sideBoard Card[]   @relation("CardToDecklistSide")
-  branch   Branch?
-  snapShot SnapShot?
+  id           String    @id @map("_id")
+  mainDeckIds  String[]  @default([])
+  sideboardIds String[]  @default([])
+  commanderIds String[]  @default([])
+  branch       Branch?
+  snapShot     SnapShot?
 }
 
 model Branch {
-  id           String   @id
+  id           String   @id @map("_id")
   name         String   @default("main")
   deckId       String
-  deck         Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade) // A branch belongs to a deck
+  deck         Deck     @relation(fields: [deckId], references: [id])
   decklistId   String   @unique
   decklist     Decklist @relation(fields: [decklistId], references: [id])
   commits      Commit[]
-  headCommitId String?  @unique @db.Char(10)
+  headCommitId String?  @unique
   headCommit   Commit?  @relation(name: "HEAD", fields: [headCommitId], references: [id])
 }
 
 model Commit {
-  id           String    @id @unique @db.Char(10)
+  id           String    @id @map("_id")
   description  String
   createdAt    DateTime  @default(now())
   branchId     String
   changes      Change[]
   headBranchOf Branch?   @relation(name: "HEAD")
-  branch       Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch       Branch    @relation(fields: [branchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   snapshot     SnapShot?
 }
 
 model SnapShot {
-  id         String   @id @db.Char(10)
-  commit     Commit   @relation(fields: [commitID], references: [id])
+  id         String   @id @map("_id")
   commitID   String   @unique
   decklistId String   @unique
+  commit     Commit   @relation(fields: [commitID], references: [id])
   decklist   Decklist @relation(fields: [decklistId], references: [id])
 }
 
+// Composite uniqueness enforced via @@unique — MongoDB ObjectId used as the document _id
 model Change {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
   action   Action
   board    Board
   commitId String
   cardId   String
-  card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  commit   Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
+  commit   Commit @relation(fields: [commitId], references: [id])
+  card     Card   @relation(fields: [cardId], references: [id])
 
-  @@id([action, cardId, commitId])
+  @@unique([action, board, cardId, commitId])
 }
 
 enum Action {

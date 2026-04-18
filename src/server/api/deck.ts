@@ -1,58 +1,96 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import prisma from '../db.js';
-import { randomBytes } from "crypto";
+import { randomUUID } from "crypto";
+import { z } from 'zod';
+import { requireAuth } from '../middleware/auth.js';
 
 const deckRouter = Router();
 
-deckRouter.post("/", async (req : Request, res : Response) => {
-  const {name, userId, description} = req.body;
-  const commitHash = randomBytes(4).toString("base64url");
-  const branchId = randomBytes(4).toString("base64url");
-  const deckId = randomBytes(4).toString("base64url");
-  const decklistId = randomBytes(4).toString("base64url");
+const createDeckSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+});
+
+const createBranchSchema = z.object({
+  sourceCommitId: z.string().min(1),
+  branchName: z.string().min(1).max(50).optional(),
+});
+
+const commitSchema = z.object({
+  changes: z.array(z.object({
+    action: z.enum(['ADD', 'REMOVE']),
+    board: z.enum(['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING']),
+    cardId: z.string().min(1),
+  })).min(1),
+  description: z.string().min(1).max(500),
+  mainDeck: z.array(z.string()),
+  sideBoard: z.array(z.string()).default([]),
+  commander: z.array(z.string()).default([]),
+});
+
+// Fetch cards by ID arrays and return a name-keyed map with faces
+async function resolveCards(ids: string[]) {
+  if (ids.length === 0) return new Map();
+  const cards = await prisma.card.findMany({
+    where: { id: { in: ids } },
+    include: { faces: true },
+  });
+  return new Map(cards.map(c => [c.id, c]));
+}
+
+deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
+  const parsed = createDeckSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { name, description } = parsed.data;
+  const commitId = randomUUID();
+  const branchId = randomUUID();
+  const deckId = randomUUID();
+  const decklistId = randomUUID();
+
   try {
-    console.log("Deck upload in progress");
     await prisma.$transaction([
       prisma.deck.create({
-        data:{
+        data: {
           id: deckId,
           name,
-          user: {connect : {email: userId}},
-          description: description ? description : null,
-
-          branches: {create: {
-            id : branchId,
-            decklist: { create: { id: decklistId } },
-            commits: {create: {
-              id: commitHash,
-              description: "INIT",
-            }}
-          }}
-        }
+          user: { connect: { email: req.userEmail } },
+          description: description ?? null,
+          branches: {
+            create: {
+              id: branchId,
+              decklist: { create: { id: decklistId } },
+              commits: {
+                create: { id: commitId, description: "INIT" },
+              },
+            },
+          },
+        },
       }),
       prisma.branch.update({
-        where: {id: branchId},
-        data: {headCommitId: commitHash}
-      })
+        where: { id: branchId },
+        data: { headCommitId: commitId },
+      }),
     ]);
-    res.sendStatus(201);
-  }
-  catch(e){
+    res.status(201).json({ deckId });
+  } catch (e: any) {
     console.log(`Failed to create deck : ${e.message}`);
-    res.status(500).json({error: "Failed to create deck"});
+    res.status(500).json({ error: "Failed to create deck" });
   }
 });
 
-// Must be registered before /:id/:branch to prevent "branch" being captured as a param
-deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
+deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { sourceCommitId, branchName: customName }: { sourceCommitId: string; branchName?: string } = req.body;
+
+  const parsed = createBranchSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { sourceCommitId, branchName: customName } = parsed.data;
 
   try {
-    // Find the branch owning this commit, verifying it belongs to the deck
     const sourceBranch = await prisma.branch.findFirstOrThrow({
-      where: { deckId: id, commits: { some: { id: sourceCommitId } } },
+      where: { deckId: id, deck: { userEmail: req.userEmail }, commits: { some: { id: sourceCommitId } } },
       include: {
         commits: {
           orderBy: { createdAt: 'asc' },
@@ -63,15 +101,18 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
 
     const targetIndex = sourceBranch.commits.findIndex(c => c.id === sourceCommitId);
     if (targetIndex === -1) {
-      return res.status(404).json({ error: "Commit not found" });
+      res.status(404).json({ error: "Commit not found" }); return;
     }
 
-    // Replay changes from oldest commit up to and including the target
-    const targetCards = new Set<string>();
+    // Board-aware replay up to and including the target commit
+    const boardCards: Record<string, Set<string>> = {
+      MAIN: new Set(), COMMANDER: new Set(), SIDE: new Set(), CONSIDERING: new Set(),
+    };
     for (let i = 0; i <= targetIndex; i++) {
       for (const change of sourceBranch.commits[i].changes) {
-        if (change.action === 'ADD') targetCards.add(change.cardId);
-        else targetCards.delete(change.cardId);
+        const board = boardCards[change.board] ?? (boardCards[change.board] = new Set());
+        if (change.action === 'ADD') board.add(change.cardId);
+        else board.delete(change.cardId);
       }
     }
 
@@ -79,9 +120,9 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
     const defaultName = sourceDescription.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const branchName = customName?.trim() || defaultName;
 
-    const newBranchId = randomBytes(4).toString("base64url");
-    const seedCommitId = randomBytes(4).toString("base64url");
-    const newDecklistId = randomBytes(4).toString("base64url");
+    const newBranchId = randomUUID();
+    const seedCommitId = randomUUID();
+    const newDecklistId = randomUUID();
 
     await prisma.$transaction([
       prisma.branch.create({
@@ -92,7 +133,9 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
           decklist: {
             create: {
               id: newDecklistId,
-              mainDeck: { connect: [...targetCards].map(cid => ({ id: cid })) },
+              mainDeckIds: [...boardCards.MAIN],
+              commanderIds: [...boardCards.COMMANDER],
+              sideboardIds: [...boardCards.SIDE],
             },
           },
           commits: {
@@ -100,11 +143,13 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
               id: seedCommitId,
               description: `Branched from "${sourceDescription}"`,
               changes: {
-                create: [...targetCards].map(cardId => ({
-                  action: 'ADD',
-                  board: 'MAIN',
-                  card: { connect: { id: cardId } },
-                })),
+                create: Object.entries(boardCards).flatMap(([board, cards]) =>
+                  [...cards].map(cardId => ({
+                    action: 'ADD' as const,
+                    board: board as any,
+                    card: { connect: { id: cardId } },
+                  }))
+                ),
               },
             },
           },
@@ -117,7 +162,7 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
     ]);
 
     res.status(201).json({ branchId: newBranchId, branchName });
-  } catch (e) {
+  } catch (e: any) {
     console.log(`Failed to create branch : ${e.message}`);
     if (e.code === 'P2025') {
       res.status(404).json({ error: "Deck or commit not found" });
@@ -127,116 +172,249 @@ deckRouter.post("/:id/branch", async (req: Request, res: Response) => {
   }
 });
 
-deckRouter.get("/:id{/:branch}", async (req : Request, res : Response) => {
-  const {id, branch} = req.params;
-  try{
+deckRouter.get("/:id/:branch/analytics", requireAuth, async (req: Request, res: Response) => {
+  const { id, branch } = req.params;
+
+  try {
+    const foundBranch = await prisma.branch.findFirstOrThrow({
+      where: { deckId: id, id: branch, deck: { userEmail: req.userEmail } },
+      include: { decklist: true },
+    });
+
+    const { mainDeckIds, commanderIds } = foundBranch.decklist;
+    const allIds = [...mainDeckIds, ...commanderIds];
+    const cardMap = await resolveCards(allIds);
+    const allCards = allIds.map(id => cardMap.get(id)).filter(Boolean) as any[];
+
+    function getOracleText(card: any): string {
+      if (card.oracleText) return card.oracleText;
+      return card.faces?.map((f: any) => f.oracleText ?? '').join('\n') ?? '';
+    }
+
+    let ramp = 0, draw = 0, removal = 0;
+
+    for (const card of allCards) {
+      if (card.tags.length > 0) {
+        if (card.tags.includes('ramp')) ramp++;
+        if (card.tags.includes('draw')) draw++;
+        if (card.tags.includes('removal')) removal++;
+      } else {
+        const text = getOracleText(card).toLowerCase();
+        if (/add \{/.test(text) || /search.*library.*land/.test(text) || /put.*land.*into play/.test(text)) ramp++;
+        if (/draw a card/.test(text) || /draw \d+ cards/.test(text)) draw++;
+        if (/destroy target/.test(text) || /exile target/.test(text) || /deal \d+ damage to target creature/.test(text)) removal++;
+      }
+    }
+
+    res.json({ ramp, draw, removal, total: allCards.length });
+  } catch (e: any) {
+    if (e.code === 'P2025') {
+      res.status(404).json({ error: "Branch not found" });
+    } else {
+      console.log(`Failed to compute analytics : ${e.message}`);
+      res.status(500).json({ error: "Failed to compute analytics" });
+    }
+  }
+});
+
+deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response) => {
+  const { id, branch } = req.params;
+  try {
     const deck = await prisma.deck.findUniqueOrThrow({
-      where: {id},
+      where: { id, userEmail: req.userEmail },
       include: {
         branches: {
           where: branch ? { id: branch } : { name: "main" },
-          include:{
-            decklist: {
-              include: {
-                mainDeck: { include: { faces: true } },
-                sideBoard: { include: { faces: true } },
-              },
-            },
+          include: {
+            decklist: true,
             commits: {
               orderBy: { createdAt: 'desc' },
               include: {
                 changes: {
-                  include: { card: { select: { id: true, name: true } } }
-                }
-              }
-            }
-          }
-        }
-      }
+                  include: { card: { select: { id: true, name: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
     });
+
+    // Resolve card ID arrays to full card objects (maintaining original order)
+    const resolvedBranches = await Promise.all(
+      deck.branches.map(async (b) => {
+        const allIds = [...b.decklist.mainDeckIds, ...b.decklist.sideboardIds, ...b.decklist.commanderIds];
+        const cardMap = await resolveCards(allIds);
+        return {
+          ...b,
+          decklist: {
+            ...b.decklist,
+            mainDeck: b.decklist.mainDeckIds.map(cid => cardMap.get(cid)).filter(Boolean),
+            sideBoard: b.decklist.sideboardIds.map(cid => cardMap.get(cid)).filter(Boolean),
+            commander: b.decklist.commanderIds.map(cid => cardMap.get(cid)).filter(Boolean),
+          },
+        };
+      })
+    );
+
     const allBranches = await prisma.branch.findMany({
       where: { deckId: id },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
-    res.send({ ...deck, allBranches });
-  }
-  catch(e){
-    if(e.name === "PrismaClientKnownRequestError"){
-      console.log(`${e.meta.cause} : ${id}`);
+
+    res.send({ ...deck, branches: resolvedBranches, allBranches });
+  } catch (e: any) {
+    if (e.name === "PrismaClientKnownRequestError") {
+      console.log(`${e.meta?.cause} : ${id}`);
       res.sendStatus(404);
-    }
-    else{
-      console.log(`Failed to get deck branch : ${e.message}`)
-      res.status(500).json({error: "Failed to get deck branch"});
+    } else {
+      console.log(`Failed to get deck branch : ${e.message}`);
+      res.status(500).json({ error: "Failed to get deck branch" });
     }
   }
 });
 
+deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response) => {
+  const { id, branch } = req.params;
 
-deckRouter.post("/:id/:branch", async (req : Request, res : Response) => {
-  const {id, branch} = req.params;
-  const {changes, description, mainDeck, sideBoard} : {changes : {action: string, board: string, cardId: string}[], description : string, mainDeck : string[], sideBoard: string[]}= req.body;
+  const parsed = commitSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
-  try{
-    // Check for deck + branch in db, and get the branch's decklistId
+  const { changes, description, mainDeck, sideBoard, commander } = parsed.data;
+
+  try {
     const foundDeck = await prisma.deck.findFirstOrThrow({
-      where:{
-        id
+      where: { id, userEmail: req.userEmail },
+      include: {
+        branches: {
+          where: { id: branch },
+          select: { id: true, decklistId: true },
+        },
       },
-      include:{
-        branches:{
-          where:{
-            id: branch
-          },
-          select: { id: true, decklistId: true }
-        }
-      }
     });
+
+    if (foundDeck.branches.length === 0) {
+      res.status(404).json({ error: "Branch not found" }); return;
+    }
+
     const decklistId = foundDeck.branches[0].decklistId;
+    const newCommitId = randomUUID();
 
-    const newCommitId = randomBytes(4).toString("base64url");
-
-    //update branch with new decklist and commit
     await prisma.$transaction([
       prisma.branch.update({
-        where: {id: branch},
+        where: { id: branch },
         data: {
-          commits: {create: {
-            id: newCommitId,
-            description,
-            changes: {
-              create: changes.map(({action, board, cardId}) => ({
-                action,
-                board,
-                card: {connect: {id: cardId}}
-              }))
-            }
-          }},
-        }
+          commits: {
+            create: {
+              id: newCommitId,
+              description,
+              changes: {
+                create: changes.map(({ action, board, cardId }) => ({
+                  action,
+                  board,
+                  card: { connect: { id: cardId } },
+                })),
+              },
+            },
+          },
+        },
       }),
       prisma.decklist.update({
-        where: {id: decklistId},
+        where: { id: decklistId },
         data: {
-          mainDeck: {set: mainDeck.map(id => ({id}))},
-          sideBoard: {set: sideBoard.map(id => ({id}))},
-        }
+          mainDeckIds: mainDeck,
+          sideboardIds: sideBoard,
+          commanderIds: commander,
+        },
       }),
       prisma.branch.update({
-        where: {id: branch},
-        data: {headCommitId: newCommitId}
-      })
+        where: { id: branch },
+        data: { headCommitId: newCommitId },
+      }),
     ]);
     res.sendStatus(201);
-  }
-  catch(e){
+  } catch (e: any) {
     console.log(`Failed to upload deck update : ${e.message}`);
-    if (e.code === "P2025"){
-      res.status(404).json({error: "Deck not found"});
+    if (e.code === "P2025") {
+      res.status(404).json({ error: "Deck not found" });
+    } else {
+      res.status(500).json({ error: "Failed to upload deck update" });
     }
-    else{
-      res.status(500).json({error: "Failed to upload deck update"})
+  }
+});
+
+deckRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const branches = await prisma.branch.findMany({
+      where: { deckId: id, deck: { userEmail: req.userEmail } },
+      select: { id: true, decklistId: true },
+    });
+
+    if (branches.length === 0) {
+      const deck = await prisma.deck.findUnique({ where: { id } });
+      res.status(deck ? 403 : 404).json({ error: deck ? "Forbidden" : "Deck not found" }); return;
     }
+
+    const branchIds = branches.map(b => b.id);
+    const decklistIds = branches.map(b => b.decklistId);
+
+    const commits = await prisma.commit.findMany({
+      where: { branchId: { in: branchIds } },
+      select: { id: true },
+    });
+    const commitIds = commits.map(c => c.id);
+
+    // MongoDB has no FK cascade — delete in dependency order
+    await prisma.change.deleteMany({ where: { commitId: { in: commitIds } } });
+    await prisma.snapShot.deleteMany({ where: { decklistId: { in: decklistIds } } });
+    await prisma.commit.deleteMany({ where: { id: { in: commitIds } } });
+    await prisma.branch.deleteMany({ where: { id: { in: branchIds } } });
+    await prisma.decklist.deleteMany({ where: { id: { in: decklistIds } } });
+    await prisma.deck.delete({ where: { id } });
+
+    res.sendStatus(204);
+  } catch (e: any) {
+    console.log(`Failed to delete deck : ${e.message}`);
+    res.status(500).json({ error: "Failed to delete deck" });
+  }
+});
+
+deckRouter.delete("/:id/:branch", requireAuth, async (req: Request, res: Response) => {
+  const { id, branch } = req.params;
+  try {
+    const [foundBranch, branchCount] = await Promise.all([
+      prisma.branch.findFirst({
+        where: { id: branch, deckId: id, deck: { userEmail: req.userEmail } },
+        select: { decklistId: true },
+      }),
+      prisma.branch.count({ where: { deckId: id, deck: { userEmail: req.userEmail } } }),
+    ]);
+
+    if (!foundBranch) {
+      res.status(404).json({ error: "Branch not found" }); return;
+    }
+    if (branchCount <= 1) {
+      res.status(400).json({ error: "Cannot delete the last branch on a deck" }); return;
+    }
+
+    const commits = await prisma.commit.findMany({
+      where: { branchId: branch },
+      select: { id: true },
+    });
+    const commitIds = commits.map(c => c.id);
+
+    await prisma.change.deleteMany({ where: { commitId: { in: commitIds } } });
+    await prisma.snapShot.deleteMany({ where: { decklistId: foundBranch.decklistId } });
+    await prisma.commit.deleteMany({ where: { id: { in: commitIds } } });
+    await prisma.branch.delete({ where: { id: branch } });
+    await prisma.decklist.delete({ where: { id: foundBranch.decklistId } });
+
+    res.sendStatus(204);
+  } catch (e: any) {
+    console.log(`Failed to delete branch : ${e.message}`);
+    res.status(500).json({ error: "Failed to delete branch" });
   }
 });
 
