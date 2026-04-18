@@ -17,7 +17,6 @@ model Card {
   cmc        Float?
   oracleText String?
   layout     String?
-  tags       String[]   @default([])
   faces      CardFace[]
   changes    Change[]
 }

@@ -194,16 +194,10 @@ deckRouter.get("/:id/:branch/analytics", requireAuth, async (req: Request, res: 
     let ramp = 0, draw = 0, removal = 0;
 
     for (const card of allCards) {
-      if (card.tags.length > 0) {
-        if (card.tags.includes('ramp')) ramp++;
-        if (card.tags.includes('draw')) draw++;
-        if (card.tags.includes('removal')) removal++;
-      } else {
-        const text = getOracleText(card).toLowerCase();
-        if (/add \{/.test(text) || /search.*library.*land/.test(text) || /put.*land.*into play/.test(text)) ramp++;
-        if (/draw a card/.test(text) || /draw \d+ cards/.test(text)) draw++;
-        if (/destroy target/.test(text) || /exile target/.test(text) || /deal \d+ damage to target creature/.test(text)) removal++;
-      }
+      const text = getOracleText(card).toLowerCase();
+      if (/add \{/.test(text) || /search.*library.*land/.test(text) || /put.*land.*into play/.test(text)) ramp++;
+      if (/draw a card/.test(text) || /draw \d+ cards/.test(text)) draw++;
+      if (/destroy target/.test(text) || /exile target/.test(text) || /deal \d+ damage to target creature/.test(text)) removal++;
     }
 
     res.json({ ramp, draw, removal, total: allCards.length });
