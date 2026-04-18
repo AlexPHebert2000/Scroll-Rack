@@ -60,13 +60,17 @@ export default async () => {
 
   console.log(`Retrieved ${cards.length} cards (${faces.length} faces)`);
 
-  // MongoDB Prisma does not support skipDuplicates — pre-filter to new cards only
+  // MongoDB Prisma does not support skipDuplicates — pre-filter independently
   const existingIds = new Set(
     (await prisma.card.findMany({ select: { id: true } })).map(c => c.id)
   );
   const newCards = cards.filter(c => !existingIds.has(c.id));
-  const newCardIds = new Set(newCards.map(c => c.id));
-  const newFaces = faces.filter(f => newCardIds.has(f.cardId));
+
+  // Check faces independently: cards may already exist but faces may not
+  const existingFaceCardIds = new Set(
+    (await prisma.cardFace.findMany({ select: { cardId: true } })).map(f => f.cardId)
+  );
+  const newFaces = faces.filter(f => !existingFaceCardIds.has(f.cardId));
 
   console.log(`${newCards.length} new cards to insert (${cards.length - newCards.length} already exist)`);
   console.log('Uploading to the database...');
