@@ -41,7 +41,7 @@ describe('POST /api/user', () => {
 
     const res = await request(app)
       .post('/api/user')
-      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'pass' });
+      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'password123' });
 
     expect(res.status).toBe(201);
   });
@@ -52,9 +52,9 @@ describe('POST /api/user', () => {
 
     await request(app)
       .post('/api/user')
-      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'plaintext' });
+      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'plaintextpassword' });
 
-    expect(bcrypt.hash).toHaveBeenCalledWith('plaintext', 10);
+    expect(bcrypt.hash).toHaveBeenCalledWith('plaintextpassword', 10);
     expect(db.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ password: 'hashed_password' }),
@@ -67,7 +67,7 @@ describe('POST /api/user', () => {
 
     const res = await request(app)
       .post('/api/user')
-      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'pass' });
+      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'password123' });
 
     expect(res.status).toBe(409);
   });
@@ -79,9 +79,25 @@ describe('POST /api/user', () => {
 
     const res = await request(app)
       .post('/api/user')
-      .send({ name: 'Test', email: 'new@test.com', username: 'testuser', password: 'pass' });
+      .send({ name: 'Test', email: 'new@test.com', username: 'testuser', password: 'password123' });
 
     expect(res.status).toBe(409);
+  });
+
+  it('returns 400 when password is too short', async () => {
+    const res = await request(app)
+      .post('/api/user')
+      .send({ name: 'Test', email: 'test@test.com', username: 'testuser', password: 'short' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when username is invalid', async () => {
+    const res = await request(app)
+      .post('/api/user')
+      .send({ name: 'Test', email: 'test@test.com', username: 'ab', password: 'password123' });
+
+    expect(res.status).toBe(400);
   });
 });
 
@@ -121,7 +137,7 @@ describe('POST /api/user/login', () => {
 
     const res = await request(app)
       .post('/api/user/login')
-      .send({ email: 'nobody@test.com', password: 'pass' });
+      .send({ email: 'nobody@test.com', password: 'password' });
 
     expect(res.status).toBe(401);
   });
