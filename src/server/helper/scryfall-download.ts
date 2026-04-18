@@ -19,6 +19,36 @@ function chunks<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+// $runCommandRaw with ordered:false is MongoDB's native skipDuplicates — skips
+// any document that violates a unique index and continues with the rest.
+// Returns the number of documents actually inserted.
+async function bulkInsert(collection: string, docs: object[], label: string): Promise<number> {
+  if (docs.length === 0) return 0;
+  const batches = chunks(docs, CHUNK_SIZE);
+  let inserted = 0;
+  for (let i = 0; i < batches.length; i += CONCURRENCY) {
+    const slice = batches.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      slice.map(async (batch) => {
+        try {
+          const result = await prisma.$runCommandRaw({
+            insert: collection,
+            documents: batch,
+            ordered: false,
+          }) as { n: number };
+          return result.n ?? 0;
+        } catch (e: any) {
+          console.error(`  [${label}] chunk error (skipping): ${e.message}`);
+          return 0;
+        }
+      })
+    );
+    inserted += results.reduce((sum, n) => sum + n, 0);
+    console.log(`  ${label}: ${Math.min((i + CONCURRENCY) * CHUNK_SIZE, docs.length)} / ${docs.length}`);
+  }
+  return inserted;
+}
+
 export default async () => {
   console.log('Starting card download... Please Wait');
   console.time('Upload time');
@@ -29,13 +59,14 @@ export default async () => {
 
   const rawData: any[] = (await axios.get(bulkEntry.download_uri)).data;
 
-  const cards: SlimCard[] = [];
-  const faces: SlimFace[] = [];
+  const cardDocs: object[] = [];
+  const faceDocs: object[] = [];
 
   for (const card of rawData) {
     if (card.layout === 'art_series' || card.layout === 'token') continue;
 
-    cards.push({
+    // Card documents use _id (MongoDB) instead of id
+    const { id, ...rest } = {
       id: card.id,
       name: card.name,
       imageUrl: card.image_uris?.normal ?? null,
@@ -43,10 +74,12 @@ export default async () => {
       cmc: card.cmc ?? null,
       oracleText: card.oracle_text ?? null,
       layout: card.layout ?? null,
-    });
+    } satisfies SlimCard;
+    cardDocs.push({ _id: id, ...rest });
 
     for (const face of card.card_faces ?? []) {
-      faces.push({
+      // Face documents have no explicit _id — MongoDB auto-generates ObjectId
+      faceDocs.push({
         cardId: card.id,
         name: face.name,
         imageUrl: face.image_uris?.normal ?? null,
@@ -54,53 +87,18 @@ export default async () => {
         cmc: face.cmc ?? null,
         oracleText: face.oracle_text ?? null,
         layout: face.layout ?? null,
-      });
+      } satisfies SlimFace);
     }
   }
 
-  console.log(`Retrieved ${cards.length} cards (${faces.length} faces)`);
-
-  // MongoDB Prisma does not support skipDuplicates — pre-filter independently
-  const existingIds = new Set(
-    (await prisma.card.findMany({ select: { id: true } })).map(c => c.id)
-  );
-  const newCards = cards.filter(c => !existingIds.has(c.id));
-
-  // Check faces independently: cards may already exist but faces may not
-  const existingFaceCardIds = new Set(
-    (await prisma.cardFace.findMany({ select: { cardId: true } })).map(f => f.cardId)
-  );
-  const newFaces = faces.filter(f => !existingFaceCardIds.has(f.cardId));
-
-  console.log(`${newCards.length} new cards to insert (${cards.length - newCards.length} already exist)`);
+  console.log(`Retrieved ${cardDocs.length} cards (${faceDocs.length} faces)`);
   console.log('Uploading to the database...');
 
-  // ── Cards ──────────────────────────────────────────────────────────────────
-  const cardChunks = chunks(newCards, CHUNK_SIZE);
-  let cardCount = 0;
-  for (let i = 0; i < cardChunks.length; i += CONCURRENCY) {
-    const results = await Promise.all(
-      cardChunks.slice(i, i + CONCURRENCY).map(chunk =>
-        prisma.card.createMany({ data: chunk })
-      )
-    );
-    cardCount += results.reduce((sum, r) => sum + r.count, 0);
-    console.log(`Cards: ${Math.min((i + CONCURRENCY) * CHUNK_SIZE, newCards.length)} / ${newCards.length}`);
-  }
-  console.log(`Inserted ${cardCount} new cards`);
+  const cardCount = await bulkInsert('Card', cardDocs, 'Cards');
+  console.log(`Inserted ${cardCount} new cards (${cardDocs.length - cardCount} already existed)`);
 
-  // ── Faces ──────────────────────────────────────────────────────────────────
-  const faceChunks = chunks(newFaces, CHUNK_SIZE);
-  let faceCount = 0;
-  for (let i = 0; i < faceChunks.length; i += CONCURRENCY) {
-    const results = await Promise.all(
-      faceChunks.slice(i, i + CONCURRENCY).map(chunk =>
-        prisma.cardFace.createMany({ data: chunk })
-      )
-    );
-    faceCount += results.reduce((sum, r) => sum + r.count, 0);
-  }
-  console.log(`Inserted ${faceCount} new card faces`);
+  const faceCount = await bulkInsert('CardFace', faceDocs, 'Faces');
+  console.log(`Inserted ${faceCount} new card faces (${faceDocs.length - faceCount} already existed)`);
 
   console.timeEnd('Upload time');
 };
