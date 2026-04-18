@@ -64,12 +64,14 @@ describe('Home', () => {
     expect(screen.queryAllByRole('link')).toHaveLength(0);
   });
 
-  it('redirects to /login when the session query fails', async () => {
+  it('shows a login prompt when the session query fails', async () => {
     mockedAxios.get.mockRejectedValueOnce({ response: { status: 401 } });
 
     renderHome();
 
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(screen.getByText(/log in/i)).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /log in/i })).toHaveAttribute('href', '/login');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('calls /api/user/me to check the session', async () => {

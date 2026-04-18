@@ -1,8 +1,8 @@
-import React, {useEffect} from "react";
+import React from "react";
 import type { ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 const Home = () :ReactElement => {
   const navigate = useNavigate();
@@ -17,15 +17,19 @@ const Home = () :ReactElement => {
     navigate(`/deck/${id}`);
   }
 
-  useEffect(() => {
-    if (q.isError) { navigate('/login'); }
-  }, [q.isError])
+  if (q.isError) {
+    return (
+      <>
+        <p>Please <Link to="/login">log in</Link> to view your decklists.</p>
+      </>
+    );
+  }
 
   return (
     <>
       Welcome Home
       <hr/>
-      {user && user.decks ? user.decks.map(({name, id}, index) => <a onClick={(e) => handleClickDeck(e, id)} key={name+ index}>{name}</a>) : <>No decks</>}
+      {user && user.decks ? user.decks.map(({name, id}, index) => <a onClick={(e) => handleClickDeck(e, id)} key={id}>{name}</a>) : <>No decks</>}
     </>
   )
 }
