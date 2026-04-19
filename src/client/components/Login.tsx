@@ -1,13 +1,14 @@
 import React, {useState} from 'react';
 import type { ReactElement } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import FormControl from '@mui/material/FormControl';
 import Input from '@mui/material/Input';
 import InputLabel from '@mui/material/InputLabel';
 import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
 
 
 const Login = () :ReactElement => {
@@ -56,6 +57,9 @@ const Login = () :ReactElement => {
         />
       </FormControl>
       <Button variant='contained' onClick={handleSumbit}>Login</Button>
+      <Typography variant='body2'>
+        Don't have an account? <Link to='/signup'>Sign up</Link>
+      </Typography>
     </Box>
   )
 }

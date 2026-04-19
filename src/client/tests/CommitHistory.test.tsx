@@ -13,8 +13,8 @@ const commit1: Commit = {
   description: 'Add fetchlands',
   createdAt: '2026-01-01T12:00:00Z',
   changes: [
-    { action: 'add', card: { id: 'c1', name: 'Polluted Delta' } },
-    { action: 'remove', card: { id: 'c2', name: 'Island' } },
+    { action: 'ADD', card: { id: 'c1', name: 'Polluted Delta' } },
+    { action: 'REMOVE', card: { id: 'c2', name: 'Island' } },
   ],
 };
 

@@ -29,7 +29,7 @@ userRouter.post("/", async (req: Request, res: Response) => {
     const existingEmail = await prisma.user.findUnique({ where: { email } });
     if (existingEmail) { res.status(409).json({ error: `Email ${email} already in use` }); return; }
 
-    const existingUsername = await prisma.user.findUnique({ where: { username } });
+    const existingUsername = await prisma.user.findUnique({ where: { username, email } });
     if (existingUsername) { res.status(409).json({ error: `Username ${username} already taken` }); return; }
 
     await prisma.user.create({

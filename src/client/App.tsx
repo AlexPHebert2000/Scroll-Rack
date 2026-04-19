@@ -3,6 +3,7 @@ import {Routes, Route} from 'react-router-dom';
 import type { ReactElement } from "react";
 
 import Login from "./components/Login";
+import Signup from "./components/Signup";
 import Home from "./components/Home";
 import Decklist from "./components/Decklist";
 
@@ -25,6 +26,10 @@ const routes : {path: string, element: ReactElement}[] = [
   {
     path: "/login",
     element: <Login />
+  },
+  {
+    path: "/signup",
+    element: <Signup />
   },
   {
     path: "/",

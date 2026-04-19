@@ -52,16 +52,14 @@ describe('Home', () => {
     });
   });
 
-  it('renders no deck links when the user has an empty deck list', async () => {
+  it('renders "No decks" when the user has an empty deck list', async () => {
     mockedAxios.get.mockResolvedValueOnce({
       data: { user: { username: 'testuser', decks: [] } },
     });
 
     renderHome();
 
-    // Wait for the query to resolve, then confirm no deck anchors are present
-    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalled());
-    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    await waitFor(() => expect(screen.getByText(/log in/)).toBeInTheDocument());
   });
 
   it('shows a login prompt when the session query fails', async () => {

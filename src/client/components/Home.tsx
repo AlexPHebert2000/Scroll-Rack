@@ -17,10 +17,10 @@ const Home = () :ReactElement => {
     navigate(`/deck/${id}`);
   }
 
-  if (q.isError) {
+  if (!q.isSuccess) {
     return (
       <>
-        <p>Please <Link to="/login">log in</Link> to view your decklists.</p>
+        <p>Please <Link to="/login">log in</Link> or <Link to="/signup">sign up</Link> to view your decklists.</p>
       </>
     );
   }
@@ -29,7 +29,7 @@ const Home = () :ReactElement => {
     <>
       Welcome Home
       <hr/>
-      {user && user.decks ? user.decks.map(({name, id}, index) => <a onClick={(e) => handleClickDeck(e, id)} key={id}>{name}</a>) : <>No decks</>}
+      {user && user.decks.length > 0 ? user.decks.map(({name, id}) => <a onClick={(e) => handleClickDeck(e, id)} key={id}>{name}</a>) : <>No decks</>}
     </>
   )
 }
