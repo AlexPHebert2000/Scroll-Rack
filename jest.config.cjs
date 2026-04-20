@@ -4,7 +4,7 @@ module.exports = {
     {
       displayName: 'server',
       testEnvironment: 'node',
-      testMatch: ['<rootDir>/src/server/**/*.test.ts'],
+      testMatch: ['<rootDir>/src/server/tests/**/*.test.ts'],
       transform: {
         '^.+\\.ts$': ['ts-jest', { tsconfig: { module: 'CommonJS' } }],
       },
@@ -12,6 +12,21 @@ module.exports = {
         // Strip .js extensions so Jest resolves .ts source files
         '^(\\.{1,2}/.*)\\.js$': '$1',
       },
+    },
+    {
+      displayName: 'integration',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/src/server/integration/**/*.test.ts'],
+      transform: {
+        '^.+\\.ts$': ['ts-jest', { tsconfig: { module: 'CommonJS' } }],
+      },
+      moduleNameMapper: {
+        '^(\\.{1,2}/.*)\\.js$': '$1',
+      },
+      globalSetup: '<rootDir>/src/server/integration/globalSetup.cjs',
+      globalTeardown: '<rootDir>/src/server/integration/globalTeardown.cjs',
+      setupFiles: ['<rootDir>/src/server/integration/envSetup.ts'],
+      testTimeout: 30000,
     },
     {
       displayName: 'client',
