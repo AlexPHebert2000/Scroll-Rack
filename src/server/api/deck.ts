@@ -50,8 +50,8 @@ deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
   const decklistId = randomUUID();
 
   try {
-    await prisma.$transaction([
-      prisma.deck.create({
+    await prisma.$transaction(async (tx) => {
+      await tx.deck.create({
         data: {
           id: deckId,
           name,
@@ -61,18 +61,13 @@ deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
             create: {
               id: branchId,
               decklist: { create: { id: decklistId } },
-              commits: {
-                create: { id: commitId, description: "INIT" },
-              },
+              commits: { create: { id: commitId, description: "INIT" } },
             },
           },
         },
-      }),
-      prisma.branch.update({
-        where: { id: branchId },
-        data: { headCommitId: commitId },
-      }),
-    ]);
+      });
+      await tx.branch.update({ where: { id: branchId }, data: { headCommitId: commitId } });
+    });
     res.status(201).json({ deckId });
   } catch (e: any) {
     console.log(`Failed to create deck : ${e.message}`);
@@ -124,8 +119,8 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
     const seedCommitId = randomUUID();
     const newDecklistId = randomUUID();
 
-    await prisma.$transaction([
-      prisma.branch.create({
+    await prisma.$transaction(async (tx) => {
+      await tx.branch.create({
         data: {
           id: newBranchId,
           name: branchName,
@@ -154,12 +149,9 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
             },
           },
         },
-      }),
-      prisma.branch.update({
-        where: { id: newBranchId },
-        data: { headCommitId: seedCommitId },
-      }),
-    ]);
+      });
+      await tx.branch.update({ where: { id: newBranchId }, data: { headCommitId: seedCommitId } });
+    });
 
     res.status(201).json({ branchId: newBranchId, branchName });
   } catch (e: any) {
@@ -257,8 +249,8 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
     const decklistId = foundDeck.branches[0].decklistId;
     const newCommitId = randomUUID();
 
-    await prisma.$transaction([
-      prisma.branch.update({
+    await prisma.$transaction(async (tx) => {
+      await tx.branch.update({
         where: { id: branch },
         data: {
           commits: {
@@ -275,20 +267,20 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
             },
           },
         },
-      }),
-      prisma.decklist.update({
+      });
+      await tx.decklist.update({
         where: { id: decklistId },
         data: {
           mainDeckIds: mainDeck,
           sideboardIds: sideBoard,
           commanderIds: commander,
         },
-      }),
-      prisma.branch.update({
+      });
+      await tx.branch.update({
         where: { id: branch },
         data: { headCommitId: newCommitId },
-      }),
-    ]);
+      });
+    });
     res.sendStatus(201);
   } catch (e: any) {
     console.log(`Failed to upload deck update : ${e.message}`);

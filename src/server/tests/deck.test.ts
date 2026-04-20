@@ -44,7 +44,7 @@ jest.mock('../db', () => ({
     session: {
       findUniqueOrThrow: jest.fn(),
     },
-    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: jest.fn(),
   },
 }));
 
@@ -65,6 +65,7 @@ const VALID_SESSION = { userEmail: 'user@test.com', expires: new Date(Date.now()
 
 beforeEach(() => {
   jest.clearAllMocks();
+  db.$transaction.mockImplementation((fn: (tx: typeof db) => Promise<unknown>) => fn(db));
   db.session.findUniqueOrThrow.mockResolvedValue(VALID_SESSION);
   // Default: card resolver returns empty (tests that need cards mock this explicitly)
   db.card.findMany.mockResolvedValue([]);
