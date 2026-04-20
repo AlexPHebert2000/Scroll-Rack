@@ -13,7 +13,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -47,9 +47,12 @@ userRouter.post("/login", async (req: Request, res: Response) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
-  const { email, password } = parsed.data;
+  const { identifier, password } = parsed.data;
   try {
-    const user = await prisma.user.findUnique({where: {email}});
+    const isEmail = identifier.includes('@');
+    const user = await prisma.user.findFirst({
+      where: isEmail ? { email: identifier } : { username: identifier },
+    });
 
     if (!user){throw new Error("User not found")}
 
@@ -57,12 +60,12 @@ userRouter.post("/login", async (req: Request, res: Response) => {
 
     const cookieId = randomUUID();
     const expires = new Date(Date.now());
-    expires.setDate(expires.getDate() + 7); // Cookie Expires in 7 days
+    expires.setDate(expires.getDate() + 7);
 
     await prisma.session.create({
       data: {
         id: cookieId,
-        user: {connect: {email}},
+        user: {connect: {email: user.email}},
         expires
       }
     })

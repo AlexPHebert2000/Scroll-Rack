@@ -24,9 +24,9 @@ const renderLogin = () =>
   );
 
 describe('Login', () => {
-  it('renders email and password inputs', () => {
+  it('renders username/email and password inputs', () => {
     renderLogin();
-    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/username or email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
   });
 
@@ -35,14 +35,29 @@ describe('Login', () => {
     expect(screen.getByLabelText(/password/i)).toHaveAttribute('type', 'password');
   });
 
-  it('navigates to / after successful login', async () => {
+  it('navigates to / after successful login with email', async () => {
     mockedAxios.post.mockResolvedValueOnce({ status: 200 });
 
     renderLogin();
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@test.com' } });
+    fireEvent.change(screen.getByLabelText(/username or email/i), { target: { value: 'test@test.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/'));
+  });
+
+  it('navigates to / after successful login with username', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ status: 200 });
+
+    renderLogin();
+    fireEvent.change(screen.getByLabelText(/username or email/i), { target: { value: 'tarmogoyf42' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalledWith('/api/user/login', {
+      identifier: 'tarmogoyf42',
+      password: 'password',
+    }));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/'));
   });
 
@@ -55,7 +70,7 @@ describe('Login', () => {
     mockedAxios.post.mockRejectedValueOnce({ response: { data: { error: 'Unauthorized' } } });
 
     renderLogin();
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@test.com' } });
+    fireEvent.change(screen.getByLabelText(/username or email/i), { target: { value: 'test@test.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 

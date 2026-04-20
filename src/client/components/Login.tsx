@@ -95,9 +95,9 @@ export const AuthPage = ({ mode }: { mode: 'signin' | 'signup' }): ReactElement 
   const navigate = useNavigate();
 
   // Sign in state
-  const [siEmail, setSiEmail] = useState('');
+  const [siIdentifier, setSiIdentifier] = useState('');
   const [siPassword, setSiPassword] = useState('');
-  const [siErrors, setSiErrors] = useState<{ email?: string; password?: string; general?: string }>({});
+  const [siErrors, setSiErrors] = useState<{ identifier?: string; password?: string; general?: string }>({});
   const [siLoading, setSiLoading] = useState(false);
 
   // Sign up state
@@ -110,13 +110,13 @@ export const AuthPage = ({ mode }: { mode: 'signin' | 'signup' }): ReactElement 
   const handleSignin = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: typeof siErrors = {};
-    if (!siEmail.trim()) errs.email = 'required';
+    if (!siIdentifier.trim()) errs.identifier = 'required';
     if (!siPassword) errs.password = 'required';
     if (Object.keys(errs).length) { setSiErrors(errs); return; }
     setSiErrors({});
     setSiLoading(true);
     try {
-      await axios.post('/api/user/login', { email: siEmail, password: siPassword });
+      await axios.post('/api/user/login', { identifier: siIdentifier, password: siPassword });
       navigate('/');
     } catch (err: any) {
       setSiErrors({ general: err.response?.data?.error ?? 'Login failed' });
@@ -209,15 +209,15 @@ export const AuthPage = ({ mode }: { mode: 'signin' | 'signup' }): ReactElement 
               {siErrors.general && (
                 <Box sx={{ fontSize: 12, color: SR.accentRed, fontFamily: SR.fontUi }}>{siErrors.general}</Box>
               )}
-              <Field id="email" label="Username or email" error={siErrors.email}>
+              <Field id="identifier" label="Username or email" error={siErrors.identifier}>
                 <AuthInput
-                  id="email"
+                  id="identifier"
                   type="text"
-                  value={siEmail}
-                  onChange={(e) => setSiEmail(e.target.value)}
+                  value={siIdentifier}
+                  onChange={(e) => setSiIdentifier(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="username"
-                  hasError={!!siErrors.email}
+                  hasError={!!siErrors.identifier}
                 />
               </Field>
               <Field id="password" label="Password" error={siErrors.password}>

@@ -8,6 +8,7 @@ jest.mock('../db', () => ({
   default: {
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       findFirstOrThrow: jest.fn(),
     },
@@ -24,7 +25,7 @@ jest.mock('bcrypt', () => ({
 }));
 
 const db = prisma as {
-  user: { findUnique: jest.Mock; create: jest.Mock; findFirstOrThrow: jest.Mock };
+  user: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; findFirstOrThrow: jest.Mock };
   session: { findUniqueOrThrow: jest.Mock; create: jest.Mock };
 };
 
@@ -106,14 +107,14 @@ describe('POST /api/user', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/user/login', () => {
-  it('returns 200 and sets an httpOnly cookie on success', async () => {
-    db.user.findUnique.mockResolvedValueOnce({ email: 'test@test.com', password: 'hashed' });
+  it('returns 200 and sets an httpOnly cookie on success with email', async () => {
+    db.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'test@test.com', password: 'hashed' });
     (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
     db.session.create.mockResolvedValueOnce({});
 
     const res = await request(app)
       .post('/api/user/login')
-      .send({ email: 'test@test.com', password: 'password' });
+      .send({ identifier: 'test@test.com', password: 'password' });
 
     expect(res.status).toBe(200);
     const cookie = res.headers['set-cookie']?.[0] ?? '';
@@ -121,23 +122,42 @@ describe('POST /api/user/login', () => {
     expect(cookie).toContain('HttpOnly');
   });
 
+  it('creates session connected by email when logging in with username', async () => {
+    db.user.findFirst.mockResolvedValueOnce({ email: 'tarmogoyf@test.com', username: 'tarmogoyf42', password: 'hashed' });
+    (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+    db.session.create.mockResolvedValueOnce({});
+
+    const res = await request(app)
+      .post('/api/user/login')
+      .send({ identifier: 'tarmogoyf42', password: 'password' });
+
+    expect(res.status).toBe(200);
+    expect(db.session.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          user: { connect: { email: 'tarmogoyf@test.com' } },
+        }),
+      })
+    );
+  });
+
   it('returns 401 when the password is incorrect', async () => {
-    db.user.findUnique.mockResolvedValueOnce({ email: 'test@test.com', password: 'hashed' });
+    db.user.findFirst.mockResolvedValueOnce({ id: 'user-1', email: 'test@test.com', password: 'hashed' });
     (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
 
     const res = await request(app)
       .post('/api/user/login')
-      .send({ email: 'test@test.com', password: 'wrong' });
+      .send({ identifier: 'test@test.com', password: 'wrong' });
 
     expect(res.status).toBe(401);
   });
 
   it('returns 401 when the user does not exist', async () => {
-    db.user.findUnique.mockResolvedValueOnce(null);
+    db.user.findFirst.mockResolvedValueOnce(null);
 
     const res = await request(app)
       .post('/api/user/login')
-      .send({ email: 'nobody@test.com', password: 'password' });
+      .send({ identifier: 'nobody@test.com', password: 'password' });
 
     expect(res.status).toBe(401);
   });
