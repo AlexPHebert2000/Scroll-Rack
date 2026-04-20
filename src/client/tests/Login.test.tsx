@@ -41,16 +41,23 @@ describe('Login', () => {
     renderLogin();
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@test.com' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/'));
+  });
+
+  it('has a link to the signup page', () => {
+    renderLogin();
+    expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/signup');
   });
 
   it('does not navigate when login fails', async () => {
     mockedAxios.post.mockRejectedValueOnce({ response: { data: { error: 'Unauthorized' } } });
 
     renderLogin();
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@test.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(mockedAxios.post).toHaveBeenCalled());
     expect(mockNavigate).not.toHaveBeenCalled();
