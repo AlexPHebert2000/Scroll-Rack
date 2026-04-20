@@ -1,18 +1,19 @@
-import Box from '@mui/material/Box'
-import {Routes, Route} from 'react-router-dom';
+import {Routes, Route, useLocation} from 'react-router-dom';
 import type { ReactElement } from "react";
 
 import Login from "./components/Login";
 import Signup from "./components/Signup";
 import Home from "./components/Home";
 import Decklist from "./components/Decklist";
+import NavBar from "./components/NavBar";
+
+const ROUTES_WITHOUT_NAV = new Set(['/login', '/signup']);
 
 function App() :ReactElement {
+  const { pathname } = useLocation();
   return (
     <>
-      <Box>
-        Scroll Rack
-      </Box>
+      {!ROUTES_WITHOUT_NAV.has(pathname) && <NavBar />}
       <Routes>
         {routes.map(({path, element}, index) => (
           <Route key={path + index} path={path} element={element}/>

@@ -72,6 +72,15 @@ describe('Home', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('has a link to the signup page when unauthenticated', async () => {
+    mockedAxios.get.mockRejectedValueOnce({ response: { status: 401 } });
+
+    renderHome();
+
+    await waitFor(() => expect(screen.getByRole('link', { name: /sign up/i })).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/signup');
+  });
+
   it('calls /api/user/me to check the session', async () => {
     mockedAxios.get.mockResolvedValueOnce({
       data: { user: { username: 'testuser', decks: [] } },
