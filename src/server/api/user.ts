@@ -127,6 +127,15 @@ userRouter.get("/me", async (req: Request, res: Response) => {
   }
 })
 
+userRouter.post("/logout", async (req: Request, res: Response) => {
+  const sessionId = req.cookies['scroll-rack-session'];
+  if (sessionId) {
+    await prisma.session.deleteMany({ where: { id: sessionId } }).catch(() => {});
+  }
+  res.clearCookie('scroll-rack-session');
+  res.sendStatus(200);
+});
+
 userRouter.get("/profile/:username", async (req : Request, res : Response) => {
   const {username} = req.params;
   try {
