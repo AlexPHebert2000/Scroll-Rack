@@ -19,34 +19,33 @@ function chunks<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-// $runCommandRaw with ordered:false is MongoDB's native skipDuplicates — skips
-// any document that violates a unique index and continues with the rest.
-// Returns the number of documents actually inserted.
-async function bulkInsert(collection: string, docs: object[], label: string): Promise<number> {
-  if (docs.length === 0) return 0;
+// Bulk upsert using MongoDB's native update command with upsert:true.
+// Existing documents are updated in-place; new ones are inserted.
+// filterField: the field(s) used to match existing docs (e.g. '_id' for cards).
+async function bulkUpsert(collection: string, docs: Record<string, unknown>[], filterFields: string[], label: string): Promise<void> {
+  if (docs.length === 0) return;
   const batches = chunks(docs, CHUNK_SIZE);
-  let inserted = 0;
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const slice = batches.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(
+    await Promise.all(
       slice.map(async (batch) => {
+        const updates = batch.map(doc => {
+          const filter: Record<string, unknown> = {};
+          for (const f of filterFields) filter[f] = doc[f];
+          const { ...fields } = doc;
+          // Remove filter fields from $set to avoid immutable field errors on _id
+          for (const f of filterFields) if (f === '_id') delete fields[f];
+          return { q: filter, u: { $set: fields }, upsert: true };
+        });
         try {
-          const result = await prisma.$runCommandRaw({
-            insert: collection,
-            documents: batch,
-            ordered: false,
-          }) as { n: number };
-          return result.n ?? 0;
+          await prisma.$runCommandRaw({ update: collection, updates, ordered: false });
         } catch (e: any) {
-          console.error(`  [${label}] chunk error (skipping): ${e.message}`);
-          return 0;
+          console.error(`  [${label}] chunk error: ${e.message}`);
         }
       })
     );
-    inserted += results.reduce((sum, n) => sum + n, 0);
     console.log(`  ${label}: ${Math.min((i + CONCURRENCY) * CHUNK_SIZE, docs.length)} / ${docs.length}`);
   }
-  return inserted;
 }
 
 export default async () => {
@@ -96,11 +95,11 @@ export default async () => {
   console.log(`Retrieved ${cardDocs.length} cards (${faceDocs.length} faces)`);
   console.log('Uploading to the database...');
 
-  const cardCount = await bulkInsert('Card', cardDocs, 'Cards');
-  console.log(`Inserted ${cardCount} new cards (${cardDocs.length - cardCount} already existed)`);
+  await bulkUpsert('Card', cardDocs as Record<string, unknown>[], ['_id'], 'Cards');
+  console.log(`Upserted ${cardDocs.length} cards`);
 
-  const faceCount = await bulkInsert('CardFace', faceDocs, 'Faces');
-  console.log(`Inserted ${faceCount} new card faces (${faceDocs.length - faceCount} already existed)`);
+  await bulkUpsert('CardFace', faceDocs as Record<string, unknown>[], ['cardId', 'name'], 'Faces');
+  console.log(`Upserted ${faceDocs.length} card faces`);
 
   console.timeEnd('Upload time');
 };

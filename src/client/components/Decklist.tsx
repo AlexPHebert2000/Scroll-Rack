@@ -197,6 +197,7 @@ const Decklist = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
   const [commitDesc, setCommitDesc] = useState('');
+  const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
 
   // Pending changes
   const [pendingAdds, setPendingAdds] = useState<Set<string>>(new Set());
@@ -316,7 +317,7 @@ const Decklist = () => {
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Art banner */}
-        <ArtBanner deckName={deck?.name ?? ''} portraitUrl={deck?.portraitUrl ?? null} />
+        <ArtBanner deckName={deck?.name ?? ''} portraitUrl={deck?.portraitUrl ?? null} onChangePortrait={() => setPortraitPickerOpen(true)} />
 
         {/* Deck header */}
         <Box sx={{ padding: '14px 20px 0', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0 }}>
@@ -466,6 +467,60 @@ const Decklist = () => {
         onRemove={stageRemove}
         onUndo={undoChange}
       />
+
+      {/* ── Portrait picker dialog ─────────────────────────────────────────── */}
+      {(() => {
+        const pickerCards = [...commanderCards, ...mainCards, ...addedCards].filter(
+          (c, i, arr) => c.artCropUrl && arr.findIndex(x => x.id === c.id) === i
+        );
+        return (
+          <Dialog open={portraitPickerOpen} onClose={() => setPortraitPickerOpen(false)} fullWidth maxWidth="md">
+            <DialogTitle sx={{ fontFamily: SR.fontUi, fontSize: 14, pb: 1 }}>Choose Deck Portrait</DialogTitle>
+            <DialogContent sx={{ pt: '8px !important' }}>
+              {pickerCards.length === 0 ? (
+                <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint, py: 2 }}>
+                  No cards with art available. Add cards to the deck first.
+                </Typography>
+              ) : (
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                  {pickerCards.map(card => (
+                    <Box
+                      key={card.id}
+                      onClick={() => { handleSetPortrait(card.artCropUrl!); setPortraitPickerOpen(false); }}
+                      sx={{
+                        cursor: 'pointer', borderRadius: '6px', overflow: 'hidden',
+                        border: deck?.portraitUrl === card.artCropUrl
+                          ? `1.5px solid ${SR.accentTealLight}`
+                          : `0.5px solid ${SR.border}`,
+                        '&:hover': { borderColor: SR.textMuted },
+                        transition: 'border-color 120ms',
+                      }}
+                    >
+                      <Box
+                        component="img"
+                        src={card.artCropUrl!}
+                        alt={cardDisplayName(card)}
+                        sx={{ width: '100%', display: 'block', aspectRatio: '626 / 457', objectFit: 'cover' }}
+                      />
+                      <Box sx={{
+                        padding: '6px 10px',
+                        fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted,
+                        backgroundColor: SR.surfacePanel,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {cardDisplayName(card)}
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setPortraitPickerOpen(false)} variant="outlined">Cancel</Button>
+            </DialogActions>
+          </Dialog>
+        );
+      })()}
 
       {/* ── Commit dialog ───────────────────────────────────────────────────── */}
       <Dialog open={commitOpen} onClose={() => setCommitOpen(false)} fullWidth maxWidth="sm">
