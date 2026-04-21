@@ -12,8 +12,8 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 import CardImage, { Card, cardDisplayName } from './CardImage';
-import type { Commit } from './CommitHistory';
 import CommitGraph from './decklist/CommitGraph';
+import type { Commit } from './decklist/CommitGraph';
 import ArtBanner from './decklist/ArtBanner';
 import CardListView from './decklist/CardListView';
 import SearchDrawer from './decklist/SearchDrawer';

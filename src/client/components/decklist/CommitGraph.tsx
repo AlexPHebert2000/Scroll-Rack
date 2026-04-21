@@ -2,7 +2,9 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import { SR } from '../../theme';
 import type { CommitNode } from './graphUtils';
-import type { Commit } from '../CommitHistory';
+
+export interface Change { action: string; card: { id: string; name: string }; }
+export interface Commit { id: string; description: string; createdAt: string; changes: Change[]; }
 
 const GRAPH_BG = '#161B20';
 const GRAPH_LEFT = 14;

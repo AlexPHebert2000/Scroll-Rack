@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
 import Home from '../components/Home';
+import UserProvider from '../contexts/UserContext';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -24,7 +25,9 @@ const renderHome = () => {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <Home />
+        <UserProvider>
+          <Home />
+        </UserProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );

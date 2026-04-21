@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
 import NavBar from '../components/NavBar';
+import UserProvider from '../contexts/UserContext';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -24,7 +25,9 @@ const renderNavBar = () => {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <NavBar />
+        <UserProvider>
+          <NavBar />
+        </UserProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );
