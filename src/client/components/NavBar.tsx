@@ -24,7 +24,7 @@ import LogoMark from './LogoMark';
 import { SR } from '../theme';
 
 const NavBar = (): ReactElement => {
-  const { user, isSuccess } = useUser();
+  const { user, isLoading, isSuccess } = useUser();
   const username = user?.username;
   const initials = username ? username.slice(0, 2).toUpperCase() : '';
 
@@ -76,7 +76,16 @@ const NavBar = (): ReactElement => {
 
         <Box sx={{ flex: 1 }} />
 
-        {isSuccess ? (
+        {!isLoading && !isSuccess && (
+          <Button
+            component={Link}
+            to="/login"
+            sx={{ color: SR.textLight, fontSize: 12, fontFamily: SR.fontUi }}
+          >
+            Login
+          </Button>
+        )}
+        {isSuccess && (
           <>
             <IconButton
               onClick={handleNewDeckOpen}
@@ -151,14 +160,6 @@ const NavBar = (): ReactElement => {
               </DialogActions>
             </Dialog>
           </>
-        ) : (
-          <Button
-            component={Link}
-            to="/login"
-            sx={{ color: SR.textLight, fontSize: 12, fontFamily: SR.fontUi }}
-          >
-            Login
-          </Button>
         )}
       </Toolbar>
     </AppBar>

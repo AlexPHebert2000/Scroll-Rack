@@ -10,7 +10,9 @@ import { useUser } from '../contexts/UserContext';
 
 const Home = (): ReactElement => {
   const navigate = useNavigate();
-  const { user, isSuccess } = useUser();
+  const { user, isLoading, isSuccess } = useUser();
+
+  if (isLoading) return null;
 
   if (!isSuccess) {
     return (

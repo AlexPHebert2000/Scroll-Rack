@@ -55,14 +55,14 @@ describe('Home', () => {
     });
   });
 
-  it('renders "No decks" when the user has an empty deck list', async () => {
+  it('renders "No decks yet" when the user has an empty deck list', async () => {
     mockedAxios.get.mockResolvedValueOnce({
       data: { user: { username: 'testuser', decks: [] } },
     });
 
     renderHome();
 
-    await waitFor(() => expect(screen.getByText(/log in/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/no decks yet/i)).toBeInTheDocument());
   });
 
   it('shows a login prompt when the session query fails', async () => {
