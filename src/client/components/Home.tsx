@@ -1,21 +1,18 @@
 import React from 'react';
 import type { ReactElement } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
 import { SR } from '../theme';
+import { useUser } from '../contexts/UserContext';
 
 const Home = (): ReactElement => {
   const navigate = useNavigate();
+  const { user, isSuccess } = useUser();
 
-  const q = useQuery({ queryKey: ['sessionLookup'], queryFn: () => axios.get('/api/user/me') });
-  const user: { username: string; decks: { name: string; id: string }[] } = q.data?.data.user;
-
-  if (!q.isSuccess) {
+  if (!isSuccess) {
     return (
       <Box sx={{ p: 4 }}>
         <Typography sx={{ fontFamily: SR.fontUi, fontSize: 14, color: SR.textMuted }}>

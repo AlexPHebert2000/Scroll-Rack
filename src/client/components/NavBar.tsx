@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import type { ReactElement } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+
+import { useUser } from '../contexts/UserContext';
 
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -21,11 +23,9 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import LogoMark from './LogoMark';
 import { SR } from '../theme';
 
-const fetchSession = () => axios.get('/api/user/me');
-
 const NavBar = (): ReactElement => {
-  const { isSuccess, data } = useQuery({ queryKey: ['sessionLookup'], queryFn: fetchSession });
-  const username: string | undefined = data?.data?.user?.username;
+  const { user, isSuccess } = useUser();
+  const username = user?.username;
   const initials = username ? username.slice(0, 2).toUpperCase() : '';
 
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -41,7 +41,7 @@ const NavBar = (): ReactElement => {
   const handleLogout = async () => {
     handleClose();
     await axios.post('/api/user/logout');
-    queryClient.removeQueries({ queryKey: ['sessionLookup'] });
+    queryClient.setQueryData(['sessionLookup'], null);
     navigate('/login');
   };
 

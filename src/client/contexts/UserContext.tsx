@@ -1,25 +1,38 @@
-import React, {useState, useContext, createContext} from "react";
+import React, { createContext, useContext } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 
-const UserContext = createContext(null);
-const UpdateUserContext = createContext(null);
+export interface Deck { id: string; name: string; }
+export interface User { username: string; email: string; name: string; decks: Deck[]; }
 
-export const useUser = () => {
-  return useContext(UserContext);
+interface UserContextValue {
+  user: User | null;
+  isLoading: boolean;
+  isSuccess: boolean;
 }
 
-export const useUpdateUser = () => {
-  return useContext(UpdateUserContext);
-}
+const UserContext = createContext<UserContextValue>({
+  user: null,
+  isLoading: true,
+  isSuccess: false,
+});
 
-export const UserProvider = ({value, children}) => {
-  const [user, setUser] = useState(null);
+export const useUser = () => useContext(UserContext);
+
+export const UserProvider = ({ children }: { children: React.ReactNode }) => {
+  const { data, isLoading, isSuccess } = useQuery({
+    queryKey: ['sessionLookup'],
+    queryFn: () => axios.get('/api/user/me'),
+    retry: false,
+  });
+
+  const user: User | null = data?.data?.user ?? null;
+
   return (
-    <UserContext.Provider value={user}>
-      <UpdateUserContext.Provider value={setUser}>
-        {children}
-      </UpdateUserContext.Provider>
+    <UserContext.Provider value={{ user, isLoading, isSuccess }}>
+      {children}
     </UserContext.Provider>
-  )
-}
+  );
+};
 
-export default UserProvider
+export default UserProvider;
