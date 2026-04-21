@@ -27,6 +27,11 @@ const commitSchema = z.object({
   mainDeck: z.array(z.string()),
   sideBoard: z.array(z.string()).default([]),
   commander: z.array(z.string()).default([]),
+  portraitUrl: z.string().nullable().optional(),
+});
+
+const portraitSchema = z.object({
+  portraitUrl: z.string().url(),
 });
 
 // Fetch cards by ID arrays and return a name-keyed map with faces
@@ -242,7 +247,7 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
   const parsed = commitSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
-  const { changes, description, mainDeck, sideBoard, commander } = parsed.data;
+  const { changes, description, mainDeck, sideBoard, commander, portraitUrl } = parsed.data;
 
   try {
     const foundDeck = await prisma.deck.findFirstOrThrow({
@@ -293,6 +298,9 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
         where: { id: branch },
         data: { headCommitId: newCommitId },
       });
+      if (portraitUrl && !foundDeck.portraitUrl) {
+        await tx.deck.update({ where: { id }, data: { portraitUrl } });
+      }
     });
     res.sendStatus(201);
   } catch (e: any) {
@@ -302,6 +310,22 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
     } else {
       res.status(500).json({ error: "Failed to upload deck update" });
     }
+  }
+});
+
+deckRouter.patch("/:id/portrait", requireAuth, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const parsed = portraitSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+  try {
+    await prisma.deck.update({
+      where: { id, userEmail: req.userEmail },
+      data: { portraitUrl: parsed.data.portraitUrl },
+    });
+    res.sendStatus(200);
+  } catch (e: any) {
+    if (e.code === 'P2025') res.status(404).json({ error: 'Deck not found' });
+    else res.status(500).json({ error: 'Failed to update portrait' });
   }
 });
 

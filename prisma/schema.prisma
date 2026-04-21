@@ -13,6 +13,7 @@ model Card {
   id         String     @id @map("_id")
   name       String
   imageUrl   String?
+  artCropUrl String?
   typeLine   String?
   cmc        Float?
   oracleText String?
@@ -26,6 +27,7 @@ model CardFace {
   cardId     String
   name       String
   imageUrl   String?
+  artCropUrl String?
   typeLine   String?
   cmc        Float?
   oracleText String?
@@ -64,6 +66,7 @@ model Deck {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   description String?
+  portraitUrl String?
   user        User     @relation(fields: [userEmail], references: [email])
   branches    Branch[]
 }

@@ -35,9 +35,18 @@ interface RowProps {
   added?: boolean;
   onRemove?: () => void;
   onUndo?: () => void;
+  onSetPortrait?: () => void;
 }
 
-const CardRow = ({ card, count, italic, removing, added, onRemove, onUndo }: RowProps) => {
+const PortraitIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="1" width="10" height="10" rx="1.5" />
+    <circle cx="4.5" cy="4.5" r="1.5" />
+    <path d="M1 8.5 L3.5 6.5 L5.5 8 L8 5.5 L11 8.5" />
+  </svg>
+);
+
+const CardRow = ({ card, count, italic, removing, added, onRemove, onUndo, onSetPortrait }: RowProps) => {
   const [hov, setHov] = useState(false);
   const isPending = removing || added;
   return (
@@ -64,18 +73,35 @@ const CardRow = ({ card, count, italic, removing, added, onRemove, onUndo }: Row
         {cardDisplayName(card)}
       </Box>
       {(isPending || hov) && (onRemove || onUndo) ? (
-        <Box
-          component="button"
-          onClick={isPending ? onUndo : onRemove}
-          sx={{
-            background: 'none', border: `0.5px solid ${SR.border}`, borderRadius: '4px',
-            padding: '2px 8px', cursor: 'pointer', fontFamily: SR.fontUi, fontSize: 10,
-            color: isPending ? SR.textMuted : SR.accentRed,
-            '&:hover': { borderColor: isPending ? SR.textMuted : SR.accentRed },
-          }}
-        >
-          {isPending ? 'undo' : 'remove'}
-        </Box>
+        <>
+          {hov && !isPending && onSetPortrait && card.artCropUrl && (
+            <Box
+              component="button"
+              onClick={onSetPortrait}
+              title="Set as deck portrait"
+              sx={{
+                background: 'none', border: `0.5px solid ${SR.border}`, borderRadius: '4px',
+                padding: '4px 6px', cursor: 'pointer', color: SR.textFaint,
+                display: 'flex', alignItems: 'center',
+                '&:hover': { borderColor: SR.textMuted, color: SR.textMuted },
+              }}
+            >
+              <PortraitIcon />
+            </Box>
+          )}
+          <Box
+            component="button"
+            onClick={isPending ? onUndo : onRemove}
+            sx={{
+              background: 'none', border: `0.5px solid ${SR.border}`, borderRadius: '4px',
+              padding: '2px 8px', cursor: 'pointer', fontFamily: SR.fontUi, fontSize: 10,
+              color: isPending ? SR.textMuted : SR.accentRed,
+              '&:hover': { borderColor: isPending ? SR.textMuted : SR.accentRed },
+            }}
+          >
+            {isPending ? 'undo' : 'remove'}
+          </Box>
+        </>
       ) : (
         !hov && !isPending && card.typeLine && (
           <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
@@ -97,9 +123,10 @@ interface GroupProps {
   pendingAdds: Set<string>;
   onRemove: (id: string) => void;
   onUndo: (id: string) => void;
+  onSetPortrait: (url: string) => void;
 }
 
-const CardGroup = ({ label, counted, isCommander, pendingRemoves, pendingAdds, onRemove, onUndo }: GroupProps) => {
+const CardGroup = ({ label, counted, isCommander, pendingRemoves, pendingAdds, onRemove, onUndo, onSetPortrait }: GroupProps) => {
   const total = counted.reduce((s, { count }) => s + count, 0);
   return (
     <Box sx={{ border: `0.5px solid ${SR.border}`, borderRadius: '7px', overflow: 'hidden' }}>
@@ -121,6 +148,7 @@ const CardGroup = ({ label, counted, isCommander, pendingRemoves, pendingAdds, o
           added={pendingAdds.has(card.id)}
           onRemove={() => onRemove(card.id)}
           onUndo={() => onUndo(card.id)}
+          onSetPortrait={card.artCropUrl ? () => onSetPortrait(card.artCropUrl!) : undefined}
         />
       ))}
     </Box>
@@ -137,9 +165,10 @@ interface Props {
   pendingRemoves: Set<string>;
   onRemove: (id: string) => void;
   onUndo: (id: string) => void;
+  onSetPortrait: (url: string) => void;
 }
 
-const CardListView = ({ commanderCards, mainCards, addedCards, pendingAdds, pendingRemoves, onRemove, onUndo }: Props) => {
+const CardListView = ({ commanderCards, mainCards, addedCards, pendingAdds, pendingRemoves, onRemove, onUndo, onSetPortrait }: Props) => {
   // Merge current + staged adds (deduplicated)
   const allCards = [...mainCards, ...addedCards.filter(ac => !mainCards.some(c => c.id === ac.id))];
   const deduped = dedupeWithCount(allCards);
@@ -189,6 +218,7 @@ const CardListView = ({ commanderCards, mainCards, addedCards, pendingAdds, pend
               pendingAdds={pendingAdds}
               onRemove={onRemove}
               onUndo={onUndo}
+              onSetPortrait={onSetPortrait}
             />
           ))}
         </Box>

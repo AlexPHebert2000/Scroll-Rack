@@ -27,6 +27,7 @@ interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; commander: Card[]
 interface Branch { id: string; name: string; headCommitId: string | null; decklist: DecklistState; commits: Commit[]; }
 interface Deck {
   id: string; name: string;
+  portraitUrl: string | null;
   branches: Branch[];
   allBranches: { id: string; name: string }[];
   graphBranches: GraphBranch[];
@@ -56,7 +57,7 @@ const Tag = ({ children, variant = 'neutral' }: { children: React.ReactNode; var
 // ── Images view ───────────────────────────────────────────────────────────────
 
 const ImagesView = ({
-  commanders, mainCards, addedCards, pendingAdds, pendingRemoves, onRemove, onUndo,
+  commanders, mainCards, addedCards, pendingAdds, pendingRemoves, onRemove, onUndo, onSetPortrait,
 }: {
   commanders: Card[];
   mainCards: Card[];
@@ -65,6 +66,7 @@ const ImagesView = ({
   pendingRemoves: Set<string>;
   onRemove: (id: string) => void;
   onUndo: (id: string) => void;
+  onSetPortrait: (url: string) => void;
 }) => {
   const allCards = [...mainCards, ...addedCards.filter(ac => !mainCards.some(c => c.id === ac.id))];
   const spells = allCards.filter(c => !c.typeLine?.includes('Land'));
@@ -81,17 +83,40 @@ const ImagesView = ({
     const isPending = removing || added;
 
     const hoverAction = !isPending ? (
-      <Box
-        component="button"
-        onClick={() => onRemove(card.id)}
-        sx={{
-          ...overlayBtnSx,
-          backgroundColor: SR.accentRedBg,
-          border: `0.5px solid ${SR.accentRed}`,
-          color: SR.accentRed,
-        }}
-      >
-        remove
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+        {card.artCropUrl && (
+          <Box
+            component="button"
+            onClick={() => onSetPortrait(card.artCropUrl!)}
+            title="Set as deck portrait"
+            sx={{
+              ...overlayBtnSx,
+              backgroundColor: 'rgba(30,34,40,0.85)',
+              border: `0.5px solid rgba(255,255,255,0.2)`,
+              color: SR.textLight,
+              display: 'flex', alignItems: 'center', gap: '4px',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="1" width="10" height="10" rx="1.5" />
+              <circle cx="4.5" cy="4.5" r="1.5" />
+              <path d="M1 8.5 L3.5 6.5 L5.5 8 L8 5.5 L11 8.5" />
+            </svg>
+            portrait
+          </Box>
+        )}
+        <Box
+          component="button"
+          onClick={() => onRemove(card.id)}
+          sx={{
+            ...overlayBtnSx,
+            backgroundColor: SR.accentRedBg,
+            border: `0.5px solid ${SR.accentRed}`,
+            color: SR.accentRed,
+          }}
+        >
+          remove
+        </Box>
       </Box>
     ) : undefined;
 
@@ -214,9 +239,15 @@ const Decklist = () => {
     })),
   ];
 
+  // Portrait mutation
+  const portraitMutation = useMutation({
+    mutationFn: (portraitUrl: string) => axios.patch(`/api/deck/${id}/portrait`, { portraitUrl }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deckFetch', id] }),
+  });
+
   // Commit mutation
   const commitMutation = useMutation({
-    mutationFn: (payload: { description: string; changes: { action: string; board: string; cardId: string }[]; mainDeck: string[]; sideBoard: string[]; }) =>
+    mutationFn: (payload: { description: string; changes: { action: string; board: string; cardId: string }[]; mainDeck: string[]; sideBoard: string[]; portraitUrl?: string | null; }) =>
       axios.post(`/api/deck/${id}/${branchId}`, payload),
     onSuccess: () => {
       setPendingAdds(new Set());
@@ -235,8 +266,18 @@ const Decklist = () => {
     const newDeckIds = new Set(mainCards.map(c => c.id));
     pendingAdds.forEach(cid => newDeckIds.add(cid));
     pendingRemoves.forEach(cid => newDeckIds.delete(cid));
-    commitMutation.mutate({ description: commitDesc, changes, mainDeck: [...newDeckIds], sideBoard: [] });
+
+    let autoPortrait: string | null | undefined;
+    if (!deck?.portraitUrl) {
+      const portraitCard = commanderCards[0]
+        ?? [...mainCards, ...addedCards].find(c => !pendingRemoves.has(c.id));
+      autoPortrait = portraitCard?.artCropUrl ?? null;
+    }
+
+    commitMutation.mutate({ description: commitDesc, changes, mainDeck: [...newDeckIds], sideBoard: [], portraitUrl: autoPortrait });
   };
+
+  const handleSetPortrait = (portraitUrl: string) => portraitMutation.mutate(portraitUrl);
 
   // Derived stats
   const totalCards = mainCards.length + commanderCards.length + pendingAdds.size - pendingRemoves.size;
@@ -275,7 +316,7 @@ const Decklist = () => {
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Art banner */}
-        <ArtBanner deckName={deck?.name ?? ''} />
+        <ArtBanner deckName={deck?.name ?? ''} portraitUrl={deck?.portraitUrl ?? null} />
 
         {/* Deck header */}
         <Box sx={{ padding: '14px 20px 0', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0 }}>
@@ -396,6 +437,7 @@ const Decklist = () => {
               pendingRemoves={pendingRemoves}
               onRemove={stageRemove}
               onUndo={undoChange}
+              onSetPortrait={handleSetPortrait}
             />
           )}
           {viewMode === 'images' && (
@@ -407,6 +449,7 @@ const Decklist = () => {
               pendingRemoves={pendingRemoves}
               onRemove={stageRemove}
               onUndo={undoChange}
+              onSetPortrait={handleSetPortrait}
             />
           )}
         </Box>

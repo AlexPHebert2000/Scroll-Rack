@@ -14,11 +14,28 @@ scryfallRouter.get("/search", async (req :Request , res :Response) => {
       return;
     }
     const { data } = await axios.get(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(qString)}`);
+    const sfById = new Map<string, any>(data.data.map((c: any) => [c.id, c]));
+
     const cards = await prisma.card.findMany({
       where: { id: { in: data.data.map((card: any) => card.id) } },
       include: { faces: true },
     });
-    res.json(cards);
+
+    // Enrich with art_crop from live Scryfall response (DB may not have it yet)
+    const enriched = cards.map(card => {
+      const sf = sfById.get(card.id);
+      const artCropUrl = card.artCropUrl
+        ?? sf?.image_uris?.art_crop
+        ?? sf?.card_faces?.[0]?.image_uris?.art_crop
+        ?? null;
+      const faces = card.faces.map((face: any, i: number) => ({
+        ...face,
+        artCropUrl: face.artCropUrl ?? sf?.card_faces?.[i]?.image_uris?.art_crop ?? null,
+      }));
+      return { ...card, artCropUrl, faces };
+    });
+
+    res.json(enriched);
   }
 
   catch (error: any) {

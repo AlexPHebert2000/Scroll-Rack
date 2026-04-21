@@ -124,12 +124,14 @@ describe('Decklist — commit flow', () => {
     // Scope to the dialog to disambiguate from the header Commit button
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^commit$/i }));
 
-    expect(mockedAxios.post).toHaveBeenCalledWith('/api/deck/deck-1/branch-1', {
-      description: 'Remove a card',
-      changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'c1' }],
-      mainDeck: [],
-      sideBoard: [],
-    });
+    expect(mockedAxios.post).toHaveBeenCalledWith('/api/deck/deck-1/branch-1',
+      expect.objectContaining({
+        description: 'Remove a card',
+        changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'c1' }],
+        mainDeck: [],
+        sideBoard: [],
+      })
+    );
 
     // Dialog closes and commit button disappears (pending state cleared)
     await waitFor(() =>

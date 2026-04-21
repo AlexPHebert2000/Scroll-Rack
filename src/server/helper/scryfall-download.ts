@@ -5,11 +5,11 @@ const CHUNK_SIZE = 500;
 const CONCURRENCY = 4;
 
 type SlimCard = {
-  id: string; name: string; imageUrl: string | null;
+  id: string; name: string; imageUrl: string | null; artCropUrl: string | null;
   typeLine: string | null; cmc: number | null; oracleText: string | null; layout: string | null;
 };
 type SlimFace = {
-  cardId: string; name: string; imageUrl: string | null;
+  cardId: string; name: string; imageUrl: string | null; artCropUrl: string | null;
   typeLine: string | null; cmc: number | null; oracleText: string | null; layout: string | null;
 };
 
@@ -70,6 +70,7 @@ export default async () => {
       id: card.id,
       name: card.name,
       imageUrl: card.image_uris?.normal ?? null,
+      artCropUrl: card.image_uris?.art_crop ?? null,
       typeLine: card.type_line ?? null,
       cmc: card.cmc ?? null,
       oracleText: card.oracle_text ?? null,
@@ -83,6 +84,7 @@ export default async () => {
         cardId: card.id,
         name: face.name,
         imageUrl: face.image_uris?.normal ?? null,
+        artCropUrl: face.image_uris?.art_crop ?? null,
         typeLine: face.type_line ?? null,
         cmc: face.cmc ?? null,
         oracleText: face.oracle_text ?? null,

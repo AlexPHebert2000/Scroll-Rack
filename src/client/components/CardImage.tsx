@@ -3,8 +3,8 @@ import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Typography from "@mui/material/Typography";
 
-export interface CardFace { name: string; imageUrl: string | null; }
-export interface Card { id: string; name: string; imageUrl: string | null; typeLine?: string | null; faces: CardFace[]; }
+export interface CardFace { name: string; imageUrl: string | null; artCropUrl?: string | null; }
+export interface Card { id: string; name: string; imageUrl: string | null; artCropUrl?: string | null; typeLine?: string | null; faces: CardFace[]; }
 
 export const cardDisplayName = (card: Card) =>
   card.faces?.length > 0 ? card.faces.map((f) => f.name).join(" // ") : card.name;
