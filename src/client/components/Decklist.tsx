@@ -1,69 +1,151 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import TextField from '@mui/material/TextField';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 
-import { Card } from './CardImage';
-import CommitHistory from './CommitHistory';
+import CardImage, { Card, cardDisplayName } from './CardImage';
 import type { Commit } from './CommitHistory';
-import DecklistCards from './DecklistCards';
-import SearchResults from './SearchResults';
+import CommitGraph from './decklist/CommitGraph';
+import ArtBanner from './decklist/ArtBanner';
+import CardListView from './decklist/CardListView';
+import SearchDrawer from './decklist/SearchDrawer';
+import { buildGraph, buildBranchColors } from './decklist/graphUtils';
+import type { GraphBranch } from './decklist/graphUtils';
 import { SR } from '../theme';
 
-interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; }
-interface Branch { id: string; name: string; decklist: DecklistState; commits: Commit[]; }
-interface Deck { id: string; name: string; branches: Branch[]; allBranches: { id: string; name: string }[]; }
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const SidebarDot = ({ active }: { active?: boolean }) => (
-  <Box sx={{
-    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-    backgroundColor: active ? SR.accentTealLight : SR.border,
-  }} />
-);
+interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; commander: Card[]; }
+interface Branch { id: string; name: string; headCommitId: string | null; decklist: DecklistState; commits: Commit[]; }
+interface Deck {
+  id: string; name: string;
+  branches: Branch[];
+  allBranches: { id: string; name: string }[];
+  graphBranches: GraphBranch[];
+}
 
-const SidebarLabel = ({ children }: { children: React.ReactNode }) => (
-  <Box sx={{
-    fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500,
-    textTransform: 'uppercase', letterSpacing: '0.10em',
-    color: SR.textFaint, padding: '0 10px 4px 10px', mt: '10px',
-  }}>
-    {children}
-  </Box>
-);
+// ── Small UI primitives ────────────────────────────────────────────────────────
 
-const SidebarItem = ({ label, active, onClick }: { label: string; active?: boolean; onClick?: () => void }) => (
-  <Box
-    onClick={onClick}
-    sx={{
-      display: 'flex', alignItems: 'center', gap: 1,
-      padding: '7px 10px', mx: '6px',
-      fontSize: 13, fontFamily: SR.fontUi,
-      color: active ? SR.textLight : SR.textPrimary,
-      backgroundColor: active ? SR.surfaceInk : 'transparent',
-      borderRadius: '6px', cursor: 'pointer',
-      transition: 'background 100ms',
-      '&:hover': { backgroundColor: active ? SR.surfaceInk : SR.surfaceCard },
-    }}
-  >
-    <SidebarDot active={active} />
-    {label}
-  </Box>
-);
+const Tag = ({ children, variant = 'neutral' }: { children: React.ReactNode; variant?: 'neutral' | 'gold' | 'teal' }) => {
+  const styles = {
+    neutral: { backgroundColor: SR.surfaceCard, color: SR.textMuted, borderColor: SR.border },
+    gold: { backgroundColor: SR.accentGoldLight, color: SR.accentGold, borderColor: SR.accentGoldBorder },
+    teal: { backgroundColor: SR.accentTealBg, color: SR.accentTealLight, borderColor: SR.accentTealLight },
+  };
+  const s = styles[variant];
+  return (
+    <Box component="span" sx={{
+      ...s, border: '0.5px solid', borderRadius: '3px',
+      fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500,
+      padding: '2px 8px', display: 'inline-flex', alignItems: 'center', letterSpacing: '0.02em',
+    }}>
+      {children}
+    </Box>
+  );
+};
+
+
+// ── Images view ───────────────────────────────────────────────────────────────
+
+const ImagesView = ({
+  commanders, mainCards, addedCards, pendingAdds, pendingRemoves, onRemove, onUndo,
+}: {
+  commanders: Card[];
+  mainCards: Card[];
+  addedCards: Card[];
+  pendingAdds: Set<string>;
+  pendingRemoves: Set<string>;
+  onRemove: (id: string) => void;
+  onUndo: (id: string) => void;
+}) => {
+  const allCards = [...mainCards, ...addedCards.filter(ac => !mainCards.some(c => c.id === ac.id))];
+  const spells = allCards.filter(c => !c.typeLine?.includes('Land'));
+  const lands = allCards.filter(c => c.typeLine?.includes('Land'));
+
+  const overlayBtnSx = {
+    borderRadius: '4px', padding: '4px 10px',
+    fontFamily: SR.fontUi, fontSize: 10, cursor: 'pointer',
+  };
+
+  const renderCard = (card: Card, i: number) => {
+    const removing = pendingRemoves.has(card.id);
+    const added = pendingAdds.has(card.id);
+    const isPending = removing || added;
+
+    const hoverAction = !isPending ? (
+      <Box
+        component="button"
+        onClick={() => onRemove(card.id)}
+        sx={{
+          ...overlayBtnSx,
+          backgroundColor: SR.accentRedBg,
+          border: `0.5px solid ${SR.accentRed}`,
+          color: SR.accentRed,
+        }}
+      >
+        remove
+      </Box>
+    ) : undefined;
+
+    return (
+      <Box key={`${card.id}-${i}`} sx={{ position: 'relative', borderRadius: '8px' }}>
+        <CardImage card={card} dimmed={added} action={hoverAction} />
+        {removing && (
+          <Box sx={{
+            position: 'absolute', inset: 0, borderRadius: '8px',
+            backgroundColor: 'rgba(122,48,40,0.22)', pointerEvents: 'none',
+          }} />
+        )}
+        {isPending && (
+          <Box
+            component="button"
+            onClick={() => onUndo(card.id)}
+            sx={{
+              ...overlayBtnSx, position: 'absolute', top: '8px', right: '8px', zIndex: 1,
+              backgroundColor: removing ? SR.accentRedBg : SR.surfacePanel,
+              border: `0.5px solid ${removing ? SR.accentRed : SR.border}`,
+              color: removing ? SR.accentRed : SR.textMuted,
+            }}
+          >
+            undo
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
+  const Section = ({ title, cards }: { title: string; cards: Card[] }) => (
+    <Box sx={{ mb: '24px' }}>
+      <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: SR.textFaint, mb: '10px' }}>
+        {title}
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(186px, 1fr))', gap: '12px' }}>
+        {cards.map((card, i) => renderCard(card, i))}
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Box sx={{ padding: '20px 28px' }}>
+      {commanders.length > 0 && <Section title="Commanders" cards={commanders} />}
+      {spells.length > 0 && <Section title="Spells" cards={spells} />}
+      {lands.length > 0 && <Section title="Lands" cards={lands} />}
+    </Box>
+  );
+};
+
+// ── Decklist page ─────────────────────────────────────────────────────────────
 
 const Decklist = () => {
-  const { id, branch } = useParams();
+  const { id, branch } = useParams<{ id: string; branch?: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -73,55 +155,69 @@ const Decklist = () => {
   });
 
   const deck: Deck | undefined = deckQ.data?.data;
-  const currentBranch: Branch | undefined = deck?.branches?.[0];
-  const currentCards: Card[] = currentBranch?.decklist?.mainDeck ?? [];
+  const currentBranch = deck?.branches?.[0];
+  const mainCards = currentBranch?.decklist?.mainDeck ?? [];
+  const commanderCards = currentBranch?.decklist?.commander ?? [];
+  const commits = currentBranch?.commits ?? [];
   const branchId = currentBranch?.id;
-  const commits: Commit[] = currentBranch?.commits ?? [];
+  const headCommitId = currentBranch?.headCommitId ?? null;
 
-  const [viewMode, setViewMode] = useState<'list' | 'images'>('list');
-  const [activeTab, setActiveTab] = useState<'list' | 'diff' | 'history'>('list');
+  // Graph
+  const graphNodes = useMemo(() => buildGraph(deck?.graphBranches ?? []), [deck?.graphBranches]);
+  const branchColors = useMemo(() => buildBranchColors(deck?.graphBranches ?? []), [deck?.graphBranches]);
 
-  const [pendingAdds, setPendingAdds] = useState<Set<string>>(new Set());
-  const [pendingRemoves, setPendingRemoves] = useState<Set<string>>(new Set());
-  const hasPendingChanges = pendingAdds.size > 0 || pendingRemoves.size > 0;
-
-  const stageAdd = (card: Card) => {
-    setPendingRemoves((prev) => { const s = new Set(prev); s.delete(card.id); return s; });
-    setPendingAdds((prev) => new Set(prev).add(card.id));
-    queryClient.setQueryData(['card', card.id], card);
-  };
-
-  const stageRemove = (cardId: string) => {
-    setPendingAdds((prev) => { const s = new Set(prev); s.delete(cardId); return s; });
-    setPendingRemoves((prev) => new Set(prev).add(cardId));
-  };
-
-  const undoChange = (cardId: string) => {
-    setPendingAdds((prev) => { const s = new Set(prev); s.delete(cardId); return s; });
-    setPendingRemoves((prev) => { const s = new Set(prev); s.delete(cardId); return s; });
-  };
-
-  const [searchInput, setSearchInput] = useState('');
-  const [activeSearch, setActiveSearch] = useState('');
-
-  const searchQ = useQuery<{ data: Card[] }>({
-    queryKey: ['cardSearch', activeSearch],
-    queryFn: () => axios.get(`/api/scryfall/search?qString=${encodeURIComponent(activeSearch)}`),
-    enabled: activeSearch.length > 0,
-  });
-
-  const handleSearch = () => { if (searchInput.trim()) setActiveSearch(searchInput.trim()); };
-
+  // UI state
+  const [viewMode, setViewMode] = useState<'text' | 'images'>('text');
+  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [commitOpen, setCommitOpen] = useState(false);
   const [commitDesc, setCommitDesc] = useState('');
 
+  // Pending changes
+  const [pendingAdds, setPendingAdds] = useState<Set<string>>(new Set());
+  const [pendingRemoves, setPendingRemoves] = useState<Set<string>>(new Set());
+  const hasPending = pendingAdds.size > 0 || pendingRemoves.size > 0;
+
+  // Sync selected commit to HEAD on branch change
+  useEffect(() => {
+    if (headCommitId) setSelectedCommit(headCommitId);
+  }, [headCommitId]);
+
+  // Staging
+  const stageAdd = (card: Card) => {
+    setPendingRemoves(s => { const n = new Set(s); n.delete(card.id); return n; });
+    setPendingAdds(s => new Set(s).add(card.id));
+    queryClient.setQueryData(['card', card.id], card);
+  };
+  const stageRemove = (id: string) => {
+    setPendingAdds(s => { const n = new Set(s); n.delete(id); return n; });
+    setPendingRemoves(s => new Set(s).add(id));
+  };
+  const undoChange = (id: string) => {
+    setPendingAdds(s => { const n = new Set(s); n.delete(id); return n; });
+    setPendingRemoves(s => { const n = new Set(s); n.delete(id); return n; });
+  };
+
+  const addedCards: Card[] = [...pendingAdds]
+    .filter(cid => !mainCards.some(c => c.id === cid))
+    .map(cid => queryClient.getQueryData<Card>(['card', cid])!)
+    .filter(Boolean);
+
+  const pendingChanges = [
+    ...[...pendingRemoves].map(id => ({
+      action: 'REMOVE' as const,
+      cardName: mainCards.find(c => c.id === id)?.name ?? id,
+    })),
+    ...[...pendingAdds].map(id => ({
+      action: 'ADD' as const,
+      cardName: addedCards.find(c => c.id === id)?.name ?? id,
+    })),
+  ];
+
+  // Commit mutation
   const commitMutation = useMutation({
-    mutationFn: (payload: {
-      description: string;
-      changes: { action: string; board: string; cardId: string }[];
-      mainDeck: string[];
-      sideBoard: string[];
-    }) => axios.post(`/api/deck/${id}/${branchId}`, payload),
+    mutationFn: (payload: { description: string; changes: { action: string; board: string; cardId: string }[]; mainDeck: string[]; sideBoard: string[]; }) =>
+      axios.post(`/api/deck/${id}/${branchId}`, payload),
     onSuccess: () => {
       setPendingAdds(new Set());
       setPendingRemoves(new Set());
@@ -133,318 +229,210 @@ const Decklist = () => {
 
   const handleCommit = () => {
     const changes = [
-      ...[...pendingAdds].map((cardId) => ({ action: 'ADD', board: 'MAIN', cardId })),
-      ...[...pendingRemoves].map((cardId) => ({ action: 'REMOVE', board: 'MAIN', cardId })),
+      ...[...pendingAdds].map(cardId => ({ action: 'ADD', board: 'MAIN', cardId })),
+      ...[...pendingRemoves].map(cardId => ({ action: 'REMOVE', board: 'MAIN', cardId })),
     ];
-    const newDeckIds = new Set(currentCards.map((c) => c.id));
-    pendingAdds.forEach((cid) => newDeckIds.add(cid));
-    pendingRemoves.forEach((cid) => newDeckIds.delete(cid));
+    const newDeckIds = new Set(mainCards.map(c => c.id));
+    pendingAdds.forEach(cid => newDeckIds.add(cid));
+    pendingRemoves.forEach(cid => newDeckIds.delete(cid));
     commitMutation.mutate({ description: commitDesc, changes, mainDeck: [...newDeckIds], sideBoard: [] });
   };
 
-  const addedCards: Card[] = [...pendingAdds]
-    .filter((cid) => !currentCards.some((c) => c.id === cid))
-    .map((cid) => queryClient.getQueryData<Card>(['card', cid])!)
-    .filter(Boolean);
+  // Derived stats
+  const totalCards = mainCards.length + commanderCards.length + pendingAdds.size - pendingRemoves.size;
+  const spellCount = [...mainCards, ...addedCards].filter(c => !c.typeLine?.includes('Land') && !pendingRemoves.has(c.id)).length;
+  const landCount = [...mainCards, ...addedCards].filter(c => c.typeLine?.includes('Land') && !pendingRemoves.has(c.id)).length;
 
-  const [historyOpen, setHistoryOpen] = useState(false);
+  // ── Loading / error states ───────────────────────────────────────────────────
 
-  const branchMutation = useMutation({
-    mutationFn: ({ sourceCommitId, branchName }: { sourceCommitId: string; branchName: string }) =>
-      axios.post(`/api/deck/${id}/branch`, { sourceCommitId, branchName }),
-    onSuccess: ({ data }) => {
-      queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
-      navigate(`/deck/${id}/${data.branchId}`);
-    },
-  });
-
-  const totalCards = currentCards.length + pendingAdds.size - pendingRemoves.size;
-
-  if (deckQ.isLoading) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-        <Typography sx={{ fontFamily: SR.fontMono, fontSize: 12, color: SR.textFaint }}>loading…</Typography>
-      </Box>
-    );
-  }
-  if (deckQ.isError) {
-    return (
-      <Box sx={{ p: 4 }}>
-        <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.accentRed }}>Failed to load deck.</Typography>
-      </Box>
-    );
-  }
+  if (deckQ.isLoading) return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 50px)' }}>
+      <Typography sx={{ fontFamily: SR.fontMono, fontSize: 12, color: SR.textFaint }}>loading…</Typography>
+    </Box>
+  );
+  if (deckQ.isError) return (
+    <Box sx={{ p: 4 }}>
+      <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.accentRed }}>Failed to load deck.</Typography>
+    </Box>
+  );
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 50px)', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 50px)', overflow: 'hidden', backgroundColor: SR.surfaceApp }}>
 
-      {/* ── Sidebar ── */}
-      <Box sx={{
-        width: 205, flexShrink: 0,
-        backgroundColor: SR.surfacePanel,
-        borderRight: `0.5px solid ${SR.border}`,
-        display: 'flex', flexDirection: 'column',
-        overflowY: 'auto', pt: '12px', pb: '12px',
-      }}>
-        <SidebarLabel>Branches</SidebarLabel>
-        {(deck?.allBranches ?? []).map((b) => (
-          <SidebarItem
-            key={b.id}
-            label={b.name}
-            active={b.id === (branch ?? currentBranch?.id)}
-            onClick={() => navigate(`/deck/${id}/${b.id}`)}
-          />
-        ))}
+      {/* ── Left: Commit graph ──────────────────────────────────────────────── */}
+      <CommitGraph
+        nodes={graphNodes}
+        branchColors={branchColors}
+        headCommitId={headCommitId}
+        branchName={currentBranch?.name ?? 'main'}
+        branchCommits={commits}
+        pendingChanges={pendingChanges}
+        selectedHash={selectedCommit}
+        onSelect={setSelectedCommit}
+      />
 
-        <Box sx={{ height: '0.5px', backgroundColor: SR.border, mx: '10px', my: '6px' }} />
+      {/* ── Centre: Deck view ───────────────────────────────────────────────── */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        <SidebarLabel>Actions</SidebarLabel>
-        <Box sx={{ mx: '6px', px: '10px' }}>
-          <Button
-            size="small"
-            variant="outlined"
-            fullWidth
-            onClick={() => setHistoryOpen(true)}
-            sx={{ justifyContent: 'flex-start', fontSize: 12, color: SR.textMuted, borderColor: SR.border, mb: 1 }}
-          >
-            View history
-          </Button>
-        </Box>
-      </Box>
-
-      {/* ── Main content ── */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', backgroundColor: SR.surfaceApp }}>
+        {/* Art banner */}
+        <ArtBanner deckName={deck?.name ?? ''} />
 
         {/* Deck header */}
-        <Box sx={{ px: '20px', pt: '16px', pb: 0, borderBottom: `0.5px solid ${SR.border}` }}>
+        <Box sx={{ padding: '14px 20px 0', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0 }}>
+
+          {/* Title row */}
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '12px' }}>
             <Box>
-              <Typography sx={{ fontFamily: SR.fontDisplay, fontWeight: 600, fontSize: 22, letterSpacing: '0.03em', color: SR.textPrimary, lineHeight: 1.2, mb: '6px' }}>
-                {deck?.name}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                {/* Branch selector as tag */}
-                <Select
+              <Box sx={{ display: 'flex', gap: '7px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Branch selector styled as tag */}
+                <Box
+                  component="select"
                   value={branch ?? currentBranch?.id ?? ''}
-                  onChange={(e) => navigate(`/deck/${id}/${e.target.value}`)}
-                  size="small"
-                  variant="outlined"
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => navigate(`/deck/${id}/${e.target.value}`)}
                   sx={{
-                    fontFamily: SR.fontMono, fontSize: 11, height: 22,
-                    color: SR.textMuted, backgroundColor: SR.surfaceCard,
-                    '& .MuiOutlinedInput-notchedOutline': { borderColor: SR.border, borderWidth: '0.5px' },
-                    '& .MuiSelect-select': { py: '1px', px: '8px' },
+                    fontFamily: SR.fontMono, fontSize: 10, fontWeight: 500,
+                    backgroundColor: SR.surfaceCard, color: SR.textMuted,
+                    border: `0.5px solid ${SR.border}`, borderRadius: '3px',
+                    padding: '2px 6px', cursor: 'pointer', outline: 'none',
+                    appearance: 'none',
                   }}
                 >
-                  {(deck?.allBranches ?? []).map((b) => (
-                    <MenuItem key={b.id} value={b.id} sx={{ fontFamily: SR.fontMono, fontSize: 11 }}>{b.name}</MenuItem>
+                  {(deck?.allBranches ?? []).map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-                </Select>
-
-                <Typography sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
-                  {totalCards} cards
-                </Typography>
-                {hasPendingChanges && (
-                  <Typography sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
-                    · {pendingAdds.size + pendingRemoves.size} uncommitted
-                  </Typography>
+                </Box>
+                {headCommitId && <Tag variant="gold">{headCommitId.slice(0, 7)}</Tag>}
+                {hasPending && (
+                  <Box component="span" sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
+                    {pendingAdds.size + pendingRemoves.size} uncommitted changes
+                  </Box>
                 )}
               </Box>
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <ToggleButtonGroup
-                size="small"
-                exclusive
-                value={viewMode}
-                onChange={(_, v) => { if (v) setViewMode(v); }}
-              >
-                <ToggleButton value="list">List</ToggleButton>
-                <ToggleButton value="images">Images</ToggleButton>
-              </ToggleButtonGroup>
-              {hasPendingChanges && (
-                <Button variant="contained" size="small" onClick={() => setCommitOpen(true)}>
-                  Commit changes
+            <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {/* List / Images toggle */}
+              <Box sx={{ display: 'flex', backgroundColor: SR.surfaceCard, border: `0.5px solid ${SR.border}`, borderRadius: '6px', overflow: 'hidden' }}>
+                {(['text', 'images'] as const).map(mode => (
+                  <Box
+                    key={mode}
+                    component="button"
+                    onClick={() => setViewMode(mode)}
+                    sx={{
+                      fontFamily: SR.fontUi, fontSize: 11, fontWeight: 500, padding: '5px 12px', cursor: 'pointer',
+                      backgroundColor: viewMode === mode ? SR.surfaceInk : 'transparent',
+                      color: viewMode === mode ? SR.textLight : SR.textMuted,
+                      border: 'none', transition: 'background 120ms', textTransform: 'capitalize',
+                    }}
+                  >
+                    {mode === 'text' ? 'List' : 'Images'}
+                  </Box>
+                ))}
+              </Box>
+              {hasPending && (
+                <Button
+                  variant="contained" size="small"
+                  onClick={() => setCommitOpen(true)}
+                  sx={{ fontSize: 11 }}
+                >
+                  Commit
                 </Button>
               )}
             </Box>
           </Box>
 
           {/* Stat bar */}
-          <Box sx={{ display: 'flex', border: `0.5px solid ${SR.border}`, borderRadius: '6px', overflow: 'hidden', mb: '14px' }}>
+          <Box sx={{ display: 'flex', border: `0.5px solid ${SR.border}`, borderRadius: '7px', overflow: 'hidden', mb: '14px' }}>
             {[
-              { label: 'Cards', value: String(totalCards) },
-              { label: 'Commits', value: String(commits.length), color: SR.accentTeal },
-              { label: 'Branches', value: String(deck?.allBranches?.length ?? 1), color: SR.accentTeal },
+              { label: 'Cards', value: totalCards, accent: undefined },
+              { label: 'Spells', value: spellCount, accent: undefined },
+              { label: 'Lands', value: landCount, accent: undefined },
+              { label: 'Branches', value: deck?.allBranches?.length ?? 1, accent: SR.accentTealLight },
             ].map((s, i, arr) => (
               <Box key={s.label} sx={{
-                flex: 1, backgroundColor: SR.surfacePanel, padding: '10px 14px',
+                flex: 1, backgroundColor: SR.surfacePanel, padding: '9px 14px',
                 borderRight: i < arr.length - 1 ? `0.5px solid ${SR.border}` : 'none',
               }}>
                 <Box sx={{ fontFamily: SR.fontMono, fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: SR.textFaint, mb: '4px' }}>
                   {s.label}
                 </Box>
-                <Box sx={{ fontFamily: SR.fontDisplay, fontSize: 18, fontWeight: 600, color: s.color ?? SR.textPrimary }}>
+                <Box sx={{ fontFamily: SR.fontDisplay, fontSize: 18, fontWeight: 600, color: s.accent ?? SR.textPrimary }}>
                   {s.value}
                 </Box>
               </Box>
             ))}
+            {/* Search trigger */}
+            <Box
+              onClick={() => setSearchOpen(o => !o)}
+              sx={{
+                width: 46, flexShrink: 0, cursor: 'pointer',
+                backgroundColor: searchOpen ? SR.surfaceInk : SR.surfacePanel,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: '0 7px 7px 0',
+                transition: 'background 120ms',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none"
+                stroke={searchOpen ? SR.accentTealLight : SR.textMuted}
+                strokeWidth="1.5" strokeLinecap="round"
+              >
+                <circle cx="6.5" cy="6.5" r="5" />
+                <line x1="10.5" y1="10.5" x2="14" y2="14" />
+                {!searchOpen && <><line x1="6.5" y1="4" x2="6.5" y2="9" /><line x1="4" y1="6.5" x2="9" y2="6.5" /></>}
+              </svg>
+            </Box>
           </Box>
 
-          {/* Tabs */}
-          <Box sx={{ display: 'flex' }}>
-            {(['list', 'diff', 'history'] as const).map((t) => (
-              <Box
-                key={t}
-                onClick={() => setActiveTab(t)}
-                sx={{
-                  padding: '8px 16px', fontSize: 12, fontFamily: SR.fontUi,
-                  fontWeight: activeTab === t ? 500 : 400,
-                  color: activeTab === t ? SR.textPrimary : SR.textFaint,
-                  borderBottom: activeTab === t ? `1.5px solid ${SR.textPrimary}` : '1.5px solid transparent',
-                  cursor: 'pointer', textTransform: 'capitalize',
-                }}
-              >
-                {t}
-              </Box>
-            ))}
-          </Box>
         </Box>
 
-        {/* Tab content */}
-        <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {activeTab === 'list' && (
-            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 0 }}>
-              {/* Left: card list */}
-              <Box sx={{ flex: '0 0 55%', display: 'flex', flexDirection: 'column', borderRight: `0.5px solid ${SR.border}`, overflow: 'hidden', p: '12px 0' }}>
-                <Box sx={{ px: '14px', pb: '6px' }}>
-                  <Typography sx={{ fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.10em', color: SR.textFaint }}>
-                    Main deck — {totalCards} cards
-                  </Typography>
-                </Box>
-                <DecklistCards
-                  currentCards={currentCards}
-                  addedCards={addedCards}
-                  pendingRemoves={pendingRemoves}
-                  viewMode={viewMode}
-                  onRemove={stageRemove}
-                  onUndo={undoChange}
-                />
-              </Box>
-
-              {/* Right: search */}
-              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: '12px 16px', gap: '10px', overflow: 'hidden' }}>
-                <Typography sx={{ fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.10em', color: SR.textFaint }}>
-                  Search Cards
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    placeholder="Card name or query"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  />
-                  <Button variant="outlined" onClick={handleSearch} disabled={searchQ.isFetching} sx={{ flexShrink: 0 }}>
-                    Search
-                  </Button>
-                </Box>
-                {searchQ.isError && (
-                  <Typography sx={{ fontSize: 12, color: SR.accentRed }}>Search failed.</Typography>
-                )}
-                <SearchResults
-                  results={searchQ.data?.data ?? []}
-                  currentCards={currentCards}
-                  pendingAdds={pendingAdds}
-                  pendingRemoves={pendingRemoves}
-                  viewMode={viewMode}
-                  activeSearch={activeSearch}
-                  isFetching={searchQ.isFetching}
-                  onAdd={stageAdd}
-                  onRemove={stageRemove}
-                  onUndo={undoChange}
-                />
-              </Box>
-            </Box>
+        {/* Deck content */}
+        <Box sx={{ flex: 1, overflowY: 'auto' }}>
+          {viewMode === 'text' && (
+            <CardListView
+              commanderCards={commanderCards}
+              mainCards={mainCards}
+              addedCards={addedCards}
+              pendingAdds={pendingAdds}
+              pendingRemoves={pendingRemoves}
+              onRemove={stageRemove}
+              onUndo={undoChange}
+            />
           )}
-
-          {activeTab === 'diff' && (
-            <Box sx={{ p: '16px', overflow: 'auto', flex: 1 }}>
-              {commits.length === 0 ? (
-                <Typography sx={{ fontFamily: SR.fontMono, fontSize: 12, color: SR.textFaint }}>No commits yet.</Typography>
-              ) : (
-                <Box sx={{
-                  backgroundColor: SR.surfaceInk, borderRadius: '8px',
-                  padding: '13px 15px', fontFamily: SR.fontMono, fontSize: 12, lineHeight: 1.8,
-                }}>
-                  <Box sx={{ color: SR.diffHash }}>commit {commits[0].id.slice(0, 7)} · {currentBranch?.name}</Box>
-                  <Box sx={{ color: SR.diffMeta }}>// {commits[0].changes.length} changes · {commits[0].changes.filter((c) => c.action === 'ADD').length} added · {commits[0].changes.filter((c) => c.action === 'REMOVE').length} removed</Box>
-                  <Box sx={{ mt: 1 }}>
-                    {commits[0].changes.map((ch, i) => (
-                      <Box key={i} sx={{ color: ch.action === 'ADD' ? SR.diffAdd : SR.diffRemove }}>
-                        {ch.action === 'ADD' ? '+ ' : '- '}{ch.card.name}
-                      </Box>
-                    ))}
-                    {commits[0].changes.length === 0 && (
-                      <Box sx={{ color: SR.diffMeta }}>// no card changes in this commit</Box>
-                    )}
-                  </Box>
-                </Box>
-              )}
-            </Box>
-          )}
-
-          {activeTab === 'history' && (
-            <Box sx={{ p: '16px', overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {commits.map((commit, i) => (
-                <Box
-                  key={commit.id}
-                  sx={{
-                    backgroundColor: SR.surfacePanel,
-                    border: `0.5px solid ${SR.border}`,
-                    borderRadius: '7px', padding: '10px 14px',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: '4px' }}>
-                    <Box sx={{
-                      fontFamily: SR.fontMono, fontSize: 10, color: SR.accentGold,
-                      backgroundColor: SR.accentGoldLight, border: `0.5px solid ${SR.accentGoldBorder}`,
-                      borderRadius: '3px', padding: '1px 6px',
-                    }}>
-                      {commit.id.slice(0, 7)}
-                    </Box>
-                    {i === 0 && (
-                      <Box sx={{
-                        fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, color: SR.accentTeal,
-                        backgroundColor: SR.accentTealBg, border: `0.5px solid ${SR.accentTealLight}`,
-                        borderRadius: '3px', padding: '1px 6px',
-                      }}>
-                        HEAD
-                      </Box>
-                    )}
-                    <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint, ml: 'auto' }}>
-                      {new Date(commit.createdAt).toLocaleDateString()}
-                    </Box>
-                  </Box>
-                  <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.textPrimary }}>{commit.description}</Typography>
-                </Box>
-              ))}
-            </Box>
+          {viewMode === 'images' && (
+            <ImagesView
+              commanders={commanderCards}
+              mainCards={mainCards}
+              addedCards={addedCards}
+              pendingAdds={pendingAdds}
+              pendingRemoves={pendingRemoves}
+              onRemove={stageRemove}
+              onUndo={undoChange}
+            />
           )}
         </Box>
       </Box>
 
-      {/* ── Commit dialog ── */}
+      {/* ── Right: Search drawer ────────────────────────────────────────────── */}
+      <SearchDrawer
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        currentCards={[...mainCards, ...commanderCards]}
+        pendingAdds={pendingAdds}
+        pendingRemoves={pendingRemoves}
+        onAdd={stageAdd}
+        onRemove={stageRemove}
+        onUndo={undoChange}
+      />
+
+      {/* ── Commit dialog ───────────────────────────────────────────────────── */}
       <Dialog open={commitOpen} onClose={() => setCommitOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Commit Changes</DialogTitle>
         <DialogContent>
           <TextField
-            autoFocus
-            fullWidth
-            label="Describe your changes"
+            autoFocus fullWidth label="Describe your changes"
             value={commitDesc}
-            onChange={(e) => setCommitDesc(e.target.value)}
+            onChange={e => setCommitDesc(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && commitDesc.trim() && handleCommit()}
             sx={{ mt: 1 }}
           />
         </DialogContent>
@@ -459,16 +447,6 @@ const Decklist = () => {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* ── History drawer ── */}
-      <CommitHistory
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        branchName={currentBranch?.name ?? 'main'}
-        commits={commits}
-        onBranchFrom={({ commitId, branchName }) => branchMutation.mutate({ sourceCommitId: commitId, branchName })}
-        isBranching={branchMutation.isPending}
-      />
     </Box>
   );
 };

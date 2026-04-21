@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -37,7 +37,7 @@ const renderDecklist = () => {
 describe('Decklist', () => {
   it('fetches /api/deck/:id when no branch param is present (defaults to main)', async () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [] } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [], graphBranches: [] } });
 
     renderDecklist();
 
@@ -48,7 +48,7 @@ describe('Decklist', () => {
 
   it('fetches /api/deck/:id/:branch when branch URL param is present', async () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: 'branch-abc', commit: undefined });
-    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [] } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'deck-1', name: 'Test Deck', branches: [], allBranches: [], graphBranches: [] } });
 
     renderDecklist();
 
@@ -69,7 +69,8 @@ const deckWith = (cards: Card[], commits = []) => ({
   data: {
     id: 'deck-1',
     name: 'Test Deck',
-    branches: [{ id: 'branch-1', name: 'main', decklist: { mainDeck: cards, sideBoard: [] }, commits }],
+    graphBranches: [],
+    branches: [{ id: 'branch-1', name: 'main', headCommitId: null, decklist: { mainDeck: cards, sideBoard: [], commander: [] }, commits }],
     allBranches: [{ id: 'branch-1', name: 'main' }],
   },
 });
@@ -83,27 +84,29 @@ describe('Decklist — commit flow', () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
   });
 
-  it('"Commit Changes" button is hidden when there are no pending changes', async () => {
+  it('"Commit" button is hidden when there are no pending changes', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
-    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /commit changes/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^commit$/i })).not.toBeInTheDocument();
   });
 
-  it('"Commit Changes" button appears after staging a removal', async () => {
+  it('"Commit" button appears after staging a removal', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
-    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await userEvent.hover(screen.getByText('Lightning Bolt'));
     await userEvent.click(screen.getByRole('button', { name: /remove/i }));
-    expect(screen.getByRole('button', { name: /commit changes/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^commit$/i })).toBeInTheDocument();
   });
 
-  it('clicking "Commit Changes" opens the commit dialog', async () => {
+  it('clicking "Commit" opens the commit dialog', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
-    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await userEvent.hover(screen.getByText('Lightning Bolt'));
     await userEvent.click(screen.getByRole('button', { name: /remove/i }));
-    await userEvent.click(screen.getByRole('button', { name: /commit changes/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^commit$/i }));
     expect(screen.getByLabelText(/describe your changes/i)).toBeInTheDocument();
   });
 
@@ -111,13 +114,15 @@ describe('Decklist — commit flow', () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     mockedAxios.post.mockResolvedValueOnce({ data: {} });
     renderDecklist();
-    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
 
     // Stage a removal then open dialog
+    await userEvent.hover(screen.getByText('Lightning Bolt'));
     await userEvent.click(screen.getByRole('button', { name: /remove/i }));
-    await userEvent.click(screen.getByRole('button', { name: /commit changes/i }));
-    await userEvent.type(screen.getByLabelText(/describe your changes/i), 'Remove a card');
     await userEvent.click(screen.getByRole('button', { name: /^commit$/i }));
+    await userEvent.type(screen.getByLabelText(/describe your changes/i), 'Remove a card');
+    // Scope to the dialog to disambiguate from the header Commit button
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^commit$/i }));
 
     expect(mockedAxios.post).toHaveBeenCalledWith('/api/deck/deck-1/branch-1', {
       description: 'Remove a card',
@@ -130,7 +135,7 @@ describe('Decklist — commit flow', () => {
     await waitFor(() =>
       expect(screen.queryByLabelText(/describe your changes/i)).not.toBeInTheDocument()
     );
-    expect(screen.queryByRole('button', { name: /commit changes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^commit$/i })).not.toBeInTheDocument();
   });
 });
 
@@ -168,31 +173,29 @@ describe('Decklist — pending state management', () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
   });
 
-  it('card count label decreases when a card is staged for removal', async () => {
+  it('pending removal is tracked when a card is staged for removal', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1, card2]));
     renderDecklist();
-    await waitFor(() =>
-      expect(screen.getByText('2 cards')).toBeInTheDocument()
-    );
-    await userEvent.click(screen.getAllByRole('button', { name: /remove/i })[0]);
-    expect(screen.getByText('1 cards')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await userEvent.hover(screen.getByText('Lightning Bolt'));
+    await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+    expect(screen.getByText('1 uncommitted changes')).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// History drawer
+// Commit graph sidebar
 // ---------------------------------------------------------------------------
 
-describe('Decklist — history drawer', () => {
+describe('Decklist — commit graph sidebar', () => {
   beforeEach(() => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
   });
 
-  it('opens the history drawer when the History button is clicked', async () => {
-    mockedAxios.get.mockResolvedValue(deckWith([]));
+  it('shows commit description in the diff history panel', async () => {
+    const commit = { id: 'abc1234567', description: 'First commit', createdAt: '2024-01-01T00:00:00Z', changes: [] };
+    mockedAxios.get.mockResolvedValue(deckWith([], [commit]));
     renderDecklist();
-    await waitFor(() => expect(screen.getByText('Test Deck')).toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: /history/i }));
-    expect(screen.getByText('Commit History')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('First commit').length).toBeGreaterThan(0));
   });
 });

@@ -205,13 +205,26 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
       })
     );
 
-    const allBranches = await prisma.branch.findMany({
-      where: { deckId: id },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
+    const [allBranches, graphBranches] = await Promise.all([
+      prisma.branch.findMany({
+        where: { deckId: id },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.branch.findMany({
+        where: { deckId: id },
+        select: {
+          id: true,
+          name: true,
+          commits: {
+            select: { id: true, description: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      }),
+    ]);
 
-    res.send({ ...deck, branches: resolvedBranches, allBranches });
+    res.send({ ...deck, branches: resolvedBranches, allBranches, graphBranches });
   } catch (e: any) {
     if (e.name === "PrismaClientKnownRequestError") {
       console.log(`${e.meta?.cause} : ${id}`);
