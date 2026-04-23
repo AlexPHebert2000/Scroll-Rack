@@ -101,6 +101,10 @@ const theme = createTheme({
         root: {
           backgroundColor: SR.surfaceInk,
           borderBottom: `0.5px solid ${SR.borderDark}`,
+          borderRadius: 0,
+          borderTop: 0,
+          borderRight: 0,
+          borderLeft: 0
         },
       },
     },

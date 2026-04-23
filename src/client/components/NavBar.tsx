@@ -56,8 +56,8 @@ const NavBar = (): ReactElement => {
   };
 
   return (
-    <AppBar position="sticky">
-      <Toolbar sx={{ minHeight: '50px !important', px: '20px', gap: 2 }}>
+    <AppBar position="sticky" sx={{height: 60, justifyContent:"center"}}>
+      <Toolbar sx={{ minHeight: '50px !important', px: '20px', gap: 2, }}>
 
         {/* Logo */}
         <Box
@@ -65,9 +65,9 @@ const NavBar = (): ReactElement => {
           to="/"
           sx={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', flexShrink: 0 }}
         >
-          <LogoMark size={28} />
+          <LogoMark size={35} />
           <Box sx={{
-            fontFamily: SR.fontDisplay, fontWeight: 600, fontSize: 11,
+            fontFamily: SR.fontDisplay, fontWeight: 600, fontSize: 'large',
             color: SR.textLight, letterSpacing: '0.10em', lineHeight: 1.35,
           }}>
             SCROLL<br />RACK
@@ -92,7 +92,7 @@ const NavBar = (): ReactElement => {
               aria-label="new deck"
               sx={{ color: SR.surfaceInkDim, '&:hover': { color: SR.textLight } }}
             >
-              <AddCircleOutlineIcon fontSize="small" />
+              <AddCircleOutlineIcon fontSize="medium" />
             </IconButton>
 
             {/* User avatar */}
@@ -101,11 +101,11 @@ const NavBar = (): ReactElement => {
               role="button"
               aria-label="profile"
               sx={{
-                width: 30, height: 30, borderRadius: '50%',
+                width: 40, height: 40, borderRadius: '50%',
                 backgroundColor: SR.surfaceInkMid,
                 border: `0.5px solid ${SR.borderDark}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, color: SR.accentTealLight, fontWeight: 500,
+                fontSize: 15, color: SR.accentTealLight, fontWeight: 500,
                 fontFamily: SR.fontUi, cursor: 'pointer', flexShrink: 0,
                 '&:hover': { backgroundColor: SR.surfaceInkSub },
               }}
