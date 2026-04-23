@@ -6,13 +6,13 @@ import axios from 'axios';
 import { SR } from '../../theme';
 import type { Card } from '../CardImage';
 import { cardDisplayName } from '../CardImage';
+import type { BoardKey } from './CardListView';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   currentCards: Card[];
-  pendingAdds: Set<string>;
-  pendingRemoves: Set<string>;
+  pendingChanges: Map<string, Partial<Record<BoardKey, number>>>;
   onAdd: (card: Card) => void;
   onRemove: (id: string) => void;
   onUndo: (id: string) => void;
@@ -22,7 +22,7 @@ const PREVIEW_W = 220;
 const PREVIEW_H = Math.round(PREVIEW_W * (1040 / 745));
 const PREVIEW_DELAY = 500;
 
-const SearchDrawer = ({ open, onClose, currentCards, pendingAdds, pendingRemoves, onAdd, onRemove, onUndo }: Props) => {
+const SearchDrawer = ({ open, onClose, currentCards, pendingChanges, onAdd, onRemove, onUndo }: Props) => {
   const [query, setQuery] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -160,10 +160,19 @@ const SearchDrawer = ({ open, onClose, currentCards, pendingAdds, pendingRemoves
               </Box>
             )}
             {results.map(card => {
-              const inDeck = currentCards.some(c => c.id === card.id);
-              const staged = pendingAdds.has(card.id);
-              const removing = pendingRemoves.has(card.id);
+              const committed = currentCards.filter(c => c.id === card.id).length;
+              const effectiveCount = committed + (pendingChanges.get(card.id)?.MAIN ?? 0);
               const imgUrl = card.faces?.[0]?.imageUrl || card.imageUrl;
+
+              const btnSx = {
+                flexShrink: 0, width: 26, height: 26, borderRadius: '5px', cursor: 'pointer',
+                backgroundColor: SR.surfaceCard, border: `0.5px solid ${SR.border}`,
+                color: SR.textMuted, fontFamily: SR.fontMono, fontSize: 16, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 80ms, border-color 80ms',
+                '&:hover': { borderColor: SR.textMuted, color: SR.textPrimary },
+                '&:disabled': { opacity: 0.3, cursor: 'default' },
+              };
 
               return (
                 <Box
@@ -205,21 +214,20 @@ const SearchDrawer = ({ open, onClose, currentCards, pendingAdds, pendingRemoves
                     )}
                   </Box>
 
-                  {/* Add / undo button */}
-                  <Box
-                    component="button"
-                    onClick={() => staged || (inDeck && !removing) ? onUndo(card.id) : onAdd(card)}
-                    sx={{
-                      flexShrink: 0, width: 26, height: 26, borderRadius: '5px', cursor: 'pointer',
-                      backgroundColor: staged ? SR.accentTeal : SR.surfaceCard,
-                      border: `0.5px solid ${staged ? SR.accentTeal : SR.border}`,
-                      color: staged ? '#E0F5EF' : SR.textMuted,
-                      fontFamily: SR.fontMono, fontSize: staged ? 10 : 14,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'background 120ms',
-                    }}
-                  >
-                    {staged ? '✓' : '+'}
+                  {/* Count controls */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                    {effectiveCount > 0 && (
+                      <>
+                        <Box component="button" onClick={() => onRemove(card.id)} sx={btnSx}>−</Box>
+                        <Box sx={{
+                          fontFamily: SR.fontMono, fontSize: 12, color: SR.textMuted,
+                          minWidth: 18, textAlign: 'center',
+                        }}>
+                          {effectiveCount}
+                        </Box>
+                      </>
+                    )}
+                    <Box component="button" onClick={() => onAdd(card)} sx={btnSx}>+</Box>
                   </Box>
                 </Box>
               );

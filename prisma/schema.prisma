@@ -20,6 +20,7 @@ model Card {
   layout     String?
   faces      CardFace[]
   changes    Change[]
+  deckCards  DeckCard[]
 }
 
 model CardFace {
@@ -71,14 +72,23 @@ model Deck {
   branches    Branch[]
 }
 
-// Card lists stored as ID arrays — resolved to Card documents in application code
 model Decklist {
-  id           String    @id @map("_id")
-  mainDeckIds  String[]  @default([])
-  sideboardIds String[]  @default([])
-  commanderIds String[]  @default([])
-  branch       Branch?
-  snapShot     SnapShot?
+  id        String     @id @map("_id")
+  deckCards DeckCard[]
+  branch    Branch?
+  snapShot  SnapShot?
+}
+
+model DeckCard {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  decklistId String
+  cardId     String
+  board      Board
+  count      Int      @default(1)
+  decklist   Decklist @relation(fields: [decklistId], references: [id])
+  card       Card     @relation(fields: [cardId], references: [id])
+
+  @@unique([decklistId, cardId, board])
 }
 
 model Branch {
@@ -119,6 +129,7 @@ model Change {
   board    Board
   commitId String
   cardId   String
+  count    Int    @default(1)
   commit   Commit @relation(fields: [commitId], references: [id])
   card     Card   @relation(fields: [cardId], references: [id])
 

@@ -22,11 +22,13 @@ const commitSchema = z.object({
     action: z.enum(['ADD', 'REMOVE']),
     board: z.enum(['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING']),
     cardId: z.string().min(1),
+    count: z.number().int().min(1).default(1),
   })).min(1),
   description: z.string().min(1).max(500),
   mainDeck: z.array(z.string()),
   sideBoard: z.array(z.string()).default([]),
   commander: z.array(z.string()).default([]),
+  considering: z.array(z.string()).default([]),
   portraitUrl: z.string().nullable().optional(),
 });
 
@@ -34,14 +36,10 @@ const portraitSchema = z.object({
   portraitUrl: z.string().url(),
 });
 
-// Fetch cards by ID arrays and return a name-keyed map with faces
-async function resolveCards(ids: string[]) {
-  if (ids.length === 0) return new Map();
-  const cards = await prisma.card.findMany({
-    where: { id: { in: ids } },
-    include: { faces: true },
-  });
-  return new Map(cards.map(c => [c.id, c]));
+function toCounts(ids: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  ids.forEach(id => m.set(id, (m.get(id) ?? 0) + 1));
+  return m;
 }
 
 deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
@@ -104,15 +102,21 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
       res.status(404).json({ error: "Commit not found" }); return;
     }
 
-    // Board-aware replay up to and including the target commit
-    const boardCards: Record<string, Set<string>> = {
-      MAIN: new Set(), COMMANDER: new Set(), SIDE: new Set(), CONSIDERING: new Set(),
+    // Board-aware replay up to and including the target commit, tracking counts
+    const boardCards: Record<string, Map<string, number>> = {
+      MAIN: new Map(), COMMANDER: new Map(), SIDE: new Map(), CONSIDERING: new Map(),
     };
     for (let i = 0; i <= targetIndex; i++) {
       for (const change of sourceBranch.commits[i].changes) {
-        const board = boardCards[change.board] ?? (boardCards[change.board] = new Set());
-        if (change.action === 'ADD') board.add(change.cardId);
-        else board.delete(change.cardId);
+        const board = boardCards[change.board] ?? (boardCards[change.board] = new Map());
+        const count = (change as any).count ?? 1;
+        if (change.action === 'ADD') {
+          board.set(change.cardId, (board.get(change.cardId) ?? 0) + count);
+        } else {
+          const next = (board.get(change.cardId) ?? 0) - count;
+          if (next <= 0) board.delete(change.cardId);
+          else board.set(change.cardId, next);
+        }
       }
     }
 
@@ -130,23 +134,17 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
           id: newBranchId,
           name: branchName,
           deck: { connect: { id } },
-          decklist: {
-            create: {
-              id: newDecklistId,
-              mainDeckIds: [...boardCards.MAIN],
-              commanderIds: [...boardCards.COMMANDER],
-              sideboardIds: [...boardCards.SIDE],
-            },
-          },
+          decklist: { create: { id: newDecklistId } },
           commits: {
             create: {
               id: seedCommitId,
               description: `Branched from "${sourceDescription}"`,
               changes: {
                 create: Object.entries(boardCards).flatMap(([board, cards]) =>
-                  [...cards].map(cardId => ({
+                  [...cards.entries()].map(([cardId, count]) => ({
                     action: 'ADD' as const,
                     board: board as any,
+                    count,
                     card: { connect: { id: cardId } },
                   }))
                 ),
@@ -155,6 +153,19 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
           },
         },
       });
+
+      const deckCardData = Object.entries(boardCards).flatMap(([board, cards]) =>
+        [...cards.entries()].map(([cardId, count]) => ({
+          decklistId: newDecklistId,
+          cardId,
+          board: board as any,
+          count,
+        }))
+      );
+      if (deckCardData.length > 0) {
+        await tx.deckCard.createMany({ data: deckCardData });
+      }
+
       await tx.branch.update({ where: { id: newBranchId }, data: { headCommitId: seedCommitId } });
     });
 
@@ -179,7 +190,13 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
         branches: {
           where: branch ? { id: branch } : { name: "main" },
           include: {
-            decklist: true,
+            decklist: {
+              include: {
+                deckCards: {
+                  include: { card: { include: { faces: true } } },
+                },
+              },
+            },
             commits: {
               orderBy: { createdAt: 'desc' },
               include: {
@@ -193,22 +210,20 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
       },
     });
 
-    // Resolve card ID arrays to full card objects (maintaining original order)
-    const resolvedBranches = await Promise.all(
-      deck.branches.map(async (b) => {
-        const allIds = [...b.decklist.mainDeckIds, ...b.decklist.sideboardIds, ...b.decklist.commanderIds];
-        const cardMap = await resolveCards(allIds);
-        return {
-          ...b,
-          decklist: {
-            ...b.decklist,
-            mainDeck: b.decklist.mainDeckIds.map(cid => cardMap.get(cid)).filter(Boolean),
-            sideBoard: b.decklist.sideboardIds.map(cid => cardMap.get(cid)).filter(Boolean),
-            commander: b.decklist.commanderIds.map(cid => cardMap.get(cid)).filter(Boolean),
-          },
-        };
-      })
-    );
+    const byBoard = (deckCards: typeof deck.branches[0]['decklist']['deckCards'], board: string) =>
+      deckCards
+        .filter(dc => dc.board === board)
+        .flatMap(dc => Array(dc.count).fill(dc.card));
+
+    const resolvedBranches = deck.branches.map(b => ({
+      ...b,
+      decklist: {
+        mainDeck: byBoard(b.decklist.deckCards, 'MAIN'),
+        sideBoard: byBoard(b.decklist.deckCards, 'SIDE'),
+        commander: byBoard(b.decklist.deckCards, 'COMMANDER'),
+        considering: byBoard(b.decklist.deckCards, 'CONSIDERING'),
+      },
+    }));
 
     const [allBranches, graphBranches] = await Promise.all([
       prisma.branch.findMany({
@@ -247,7 +262,7 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
   const parsed = commitSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
-  const { changes, description, mainDeck, sideBoard, commander, portraitUrl } = parsed.data;
+  const { changes, description, mainDeck, sideBoard, commander, considering, portraitUrl } = parsed.data;
 
   try {
     const foundDeck = await prisma.deck.findFirstOrThrow({
@@ -267,6 +282,11 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
     const decklistId = foundDeck.branches[0].decklistId;
     const newCommitId = randomUUID();
 
+    const mainCounts = toCounts(mainDeck);
+    const sideCounts = toCounts(sideBoard);
+    const commanderCounts = toCounts(commander);
+    const consideringCounts = toCounts(considering);
+
     await prisma.$transaction(async (tx) => {
       await tx.branch.update({
         where: { id: branch },
@@ -276,9 +296,10 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
               id: newCommitId,
               description,
               changes: {
-                create: changes.map(({ action, board, cardId }) => ({
+                create: changes.map(({ action, board, cardId, count }) => ({
                   action,
                   board,
+                  count,
                   card: { connect: { id: cardId } },
                 })),
               },
@@ -286,14 +307,18 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
           },
         },
       });
-      await tx.decklist.update({
-        where: { id: decklistId },
-        data: {
-          mainDeckIds: mainDeck,
-          sideboardIds: sideBoard,
-          commanderIds: commander,
-        },
-      });
+
+      for (const [board, counts] of [['MAIN', mainCounts], ['SIDE', sideCounts], ['COMMANDER', commanderCounts], ['CONSIDERING', consideringCounts]] as const) {
+        await tx.deckCard.deleteMany({ where: { decklistId, board } });
+        if (counts.size > 0) {
+          await tx.deckCard.createMany({
+            data: [...counts.entries()].map(([cardId, count]) => ({
+              decklistId, cardId, board, count,
+            })),
+          });
+        }
+      }
+
       await tx.branch.update({
         where: { id: branch },
         data: { headCommitId: newCommitId },
@@ -351,11 +376,11 @@ deckRouter.delete("/:id", requireAuth, async (req: Request, res: Response) => {
     });
     const commitIds = commits.map(c => c.id);
 
-    // MongoDB has no FK cascade — delete in dependency order
     await prisma.change.deleteMany({ where: { commitId: { in: commitIds } } });
     await prisma.snapShot.deleteMany({ where: { decklistId: { in: decklistIds } } });
     await prisma.commit.deleteMany({ where: { id: { in: commitIds } } });
     await prisma.branch.deleteMany({ where: { id: { in: branchIds } } });
+    await prisma.deckCard.deleteMany({ where: { decklistId: { in: decklistIds } } });
     await prisma.decklist.deleteMany({ where: { id: { in: decklistIds } } });
     await prisma.deck.delete({ where: { id } });
 
@@ -394,6 +419,7 @@ deckRouter.delete("/:id/:branch", requireAuth, async (req: Request, res: Respons
     await prisma.snapShot.deleteMany({ where: { decklistId: foundBranch.decklistId } });
     await prisma.commit.deleteMany({ where: { id: { in: commitIds } } });
     await prisma.branch.delete({ where: { id: branch } });
+    await prisma.deckCard.deleteMany({ where: { decklistId: foundBranch.decklistId } });
     await prisma.decklist.delete({ where: { id: foundBranch.decklistId } });
 
     res.sendStatus(204);

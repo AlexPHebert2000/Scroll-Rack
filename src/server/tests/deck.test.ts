@@ -23,8 +23,11 @@ jest.mock('../db', () => ({
       deleteMany: jest.fn(),
     },
     decklist: {
-      update: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    deckCard: {
+      createMany: jest.fn(),
       deleteMany: jest.fn(),
     },
     commit: {
@@ -51,7 +54,8 @@ jest.mock('../db', () => ({
 const db = prisma as {
   deck: { create: jest.Mock; findUniqueOrThrow: jest.Mock; findFirstOrThrow: jest.Mock; findUnique: jest.Mock; delete: jest.Mock };
   branch: { create: jest.Mock; update: jest.Mock; findFirst: jest.Mock; findFirstOrThrow: jest.Mock; findMany: jest.Mock; count: jest.Mock; delete: jest.Mock; deleteMany: jest.Mock };
-  decklist: { update: jest.Mock; delete: jest.Mock; deleteMany: jest.Mock };
+  decklist: { delete: jest.Mock; deleteMany: jest.Mock };
+  deckCard: { createMany: jest.Mock; deleteMany: jest.Mock };
   commit: { findMany: jest.Mock; deleteMany: jest.Mock };
   change: { deleteMany: jest.Mock };
   snapShot: { deleteMany: jest.Mock; delete: jest.Mock };
@@ -63,12 +67,14 @@ const db = prisma as {
 const SESSION_COOKIE = 'scroll-rack-session=test-session-id';
 const VALID_SESSION = { userEmail: 'user@test.com', expires: new Date(Date.now() + 86400000) };
 
+const emptyDecklist = { id: 'dlist-1', deckCards: [] };
+
 beforeEach(() => {
   jest.clearAllMocks();
   db.$transaction.mockImplementation((fn: (tx: typeof db) => Promise<unknown>) => fn(db));
   db.session.findUniqueOrThrow.mockResolvedValue(VALID_SESSION);
-  // Default: card resolver returns empty (tests that need cards mock this explicitly)
-  db.card.findMany.mockResolvedValue([]);
+  db.deckCard.createMany.mockResolvedValue({ count: 0 });
+  db.deckCard.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -123,11 +129,15 @@ describe('GET /api/deck/:id/:branch', () => {
       name: 'My Deck',
       branches: [{
         id: 'branch-1',
-        decklist: { id: 'dlist-1', mainDeckIds: ['card-a'], sideboardIds: [], commanderIds: [] },
+        decklist: {
+          id: 'dlist-1',
+          deckCards: [
+            { board: 'MAIN', count: 1, card: { id: 'card-a', name: 'Lightning Bolt', faces: [] } },
+          ],
+        },
         commits: [],
       }],
     });
-    db.card.findMany.mockResolvedValueOnce([{ id: 'card-a', name: 'Lightning Bolt', faces: [] }]);
 
     const res = await request(app)
       .get('/api/deck/deck-1/branch-1')
@@ -139,11 +149,34 @@ describe('GET /api/deck/:id/:branch', () => {
     expect(res.body.branches[0].decklist.mainDeck[0].id).toBe('card-a');
   });
 
-  it('filters by branch id when branch param is provided', async () => {
+  it('expands count > 1 into duplicate card entries', async () => {
     db.deck.findUniqueOrThrow.mockResolvedValueOnce({
       id: 'deck-1',
       name: 'My Deck',
-      branches: [{ id: 'branch-abc', decklist: { id: 'dlist-1', mainDeckIds: [], sideboardIds: [], commanderIds: [] }, commits: [] }],
+      branches: [{
+        id: 'branch-1',
+        decklist: {
+          id: 'dlist-1',
+          deckCards: [
+            { board: 'MAIN', count: 3, card: { id: 'card-a', name: 'Lightning Bolt', faces: [] } },
+          ],
+        },
+        commits: [],
+      }],
+    });
+
+    const res = await request(app)
+      .get('/api/deck/deck-1/branch-1')
+      .set('Cookie', SESSION_COOKIE);
+
+    expect(res.body.branches[0].decklist.mainDeck).toHaveLength(3);
+    expect(res.body.branches[0].decklist.mainDeck.every((c: any) => c.id === 'card-a')).toBe(true);
+  });
+
+  it('filters by branch id when branch param is provided', async () => {
+    db.deck.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'deck-1', name: 'My Deck',
+      branches: [{ id: 'branch-abc', decklist: emptyDecklist, commits: [] }],
     });
 
     await request(app)
@@ -161,9 +194,8 @@ describe('GET /api/deck/:id/:branch', () => {
 
   it('defaults to main branch when no branch param is provided', async () => {
     db.deck.findUniqueOrThrow.mockResolvedValueOnce({
-      id: 'deck-1',
-      name: 'My Deck',
-      branches: [{ id: 'branch-1', decklist: { id: 'dlist-1', mainDeckIds: [], sideboardIds: [], commanderIds: [] }, commits: [] }],
+      id: 'deck-1', name: 'My Deck',
+      branches: [{ id: 'branch-1', decklist: emptyDecklist, commits: [] }],
     });
 
     await request(app)
@@ -200,8 +232,6 @@ describe('GET /api/deck/:id/:branch', () => {
 describe('POST /api/deck/:id/:branch', () => {
   it('returns 201 on successful commit', async () => {
     db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
-    db.branch.update.mockResolvedValueOnce({});
-    db.decklist.update.mockResolvedValueOnce({});
 
     const res = await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -218,8 +248,6 @@ describe('POST /api/deck/:id/:branch', () => {
 
   it('uses the branch id (not deck id) when updating (regression)', async () => {
     db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-abc', decklistId: 'dlist-1' }] });
-    db.branch.update.mockResolvedValueOnce({});
-    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-abc')
@@ -236,10 +264,8 @@ describe('POST /api/deck/:id/:branch', () => {
     );
   });
 
-  it('updates decklist with plain ID arrays (not relational set)', async () => {
+  it('replaces decklist via deckCard deleteMany then createMany', async () => {
     db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
-    db.branch.update.mockResolvedValueOnce({});
-    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -251,20 +277,36 @@ describe('POST /api/deck/:id/:branch', () => {
         sideBoard: [],
       });
 
-    expect(db.decklist.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          mainDeckIds: ['card-keep'],
-          sideboardIds: [],
-        }),
-      })
+    expect(db.deckCard.deleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { decklistId: 'dlist-1', board: 'MAIN' } })
     );
+    expect(db.deckCard.createMany).toHaveBeenCalledWith({
+      data: [{ decklistId: 'dlist-1', cardId: 'card-keep', board: 'MAIN', count: 1 }],
+    });
+  });
+
+  it('creates DeckCard entries with count > 1 for duplicate card ids in mainDeck', async () => {
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+
+    await request(app)
+      .post('/api/deck/deck-1/branch-1')
+      .set('Cookie', SESSION_COOKIE)
+      .send({
+        description: 'Add 3 copies',
+        changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-a', count: 3 }],
+        mainDeck: ['card-a', 'card-a', 'card-a'],
+        sideBoard: [],
+      });
+
+    expect(db.deckCard.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ cardId: 'card-a', board: 'MAIN', count: 3 }),
+      ]),
+    });
   });
 
   it('sets headCommitId to match the new commit id', async () => {
     db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
-    db.branch.update.mockResolvedValueOnce({});
-    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -283,8 +325,6 @@ describe('POST /api/deck/:id/:branch', () => {
 
   it('records commit history with changes in the branch.update call', async () => {
     db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
-    db.branch.update.mockResolvedValueOnce({});
-    db.decklist.update.mockResolvedValueOnce({});
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -341,9 +381,9 @@ describe('POST /api/deck/:id/branch', () => {
   const sourceBranch = {
     id: 'branch-1',
     commits: [
-      { id: 'commit-1', description: 'INIT',           changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-a' }] },
-      { id: 'commit-2', description: 'Add fetchlands',  changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-b' }] },
-      { id: 'commit-3', description: 'Remove card-a',   changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'card-a' }] },
+      { id: 'commit-1', description: 'INIT',           changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-a', count: 1 }] },
+      { id: 'commit-2', description: 'Add fetchlands',  changes: [{ action: 'ADD', board: 'MAIN', cardId: 'card-b', count: 1 }] },
+      { id: 'commit-3', description: 'Remove card-a',   changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'card-a', count: 1 }] },
     ],
   };
 
@@ -385,7 +425,7 @@ describe('POST /api/deck/:id/branch', () => {
     expect(res.body.branchName).toBe('add-fetchlands');
   });
 
-  it('seeds the new branch decklist with card ID arrays at the target commit', async () => {
+  it('seeds the new branch decklist via deckCard.createMany at the target commit', async () => {
     db.branch.findFirstOrThrow.mockResolvedValueOnce(sourceBranch);
     db.branch.create.mockResolvedValueOnce({ id: 'new-branch' });
 
@@ -395,17 +435,12 @@ describe('POST /api/deck/:id/branch', () => {
       .send({ sourceCommitId: 'commit-2' });
 
     // After commit-1 (add card-a) and commit-2 (add card-b): MAIN = {card-a, card-b}
-    expect(db.branch.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          decklist: {
-            create: expect.objectContaining({
-              mainDeckIds: expect.arrayContaining(['card-a', 'card-b']),
-            }),
-          },
-        }),
-      })
-    );
+    expect(db.deckCard.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ cardId: 'card-a', board: 'MAIN', count: 1 }),
+        expect.objectContaining({ cardId: 'card-b', board: 'MAIN', count: 1 }),
+      ]),
+    });
   });
 
   it('replays REMOVE actions correctly — card-a is gone after commit-3', async () => {
@@ -417,10 +452,10 @@ describe('POST /api/deck/:id/branch', () => {
       .set('Cookie', SESSION_COOKIE)
       .send({ sourceCommitId: 'commit-3' });
 
-    const createArgs = db.branch.create.mock.calls[0][0];
-    const mainDeckIds = createArgs.data.decklist.create.mainDeckIds;
-    expect(mainDeckIds).toContain('card-b');
-    expect(mainDeckIds).not.toContain('card-a');
+    const deckCardCall = db.deckCard.createMany.mock.calls[0][0];
+    const cardIds = deckCardCall.data.map((d: any) => d.cardId);
+    expect(cardIds).toContain('card-b');
+    expect(cardIds).not.toContain('card-a');
   });
 
   it('sets headCommitId on the new branch to the seed commit', async () => {
@@ -462,11 +497,6 @@ describe('DELETE /api/deck/:id', () => {
       { id: 'branch-2', decklistId: 'dlist-2' },
     ]);
     db.commit.findMany.mockResolvedValueOnce([{ id: 'commit-1' }, { id: 'commit-2' }]);
-    db.change.deleteMany.mockResolvedValueOnce({});
-    db.snapShot.deleteMany.mockResolvedValueOnce({});
-    db.commit.deleteMany.mockResolvedValueOnce({});
-    db.branch.deleteMany.mockResolvedValueOnce({});
-    db.decklist.deleteMany.mockResolvedValueOnce({});
     db.deck.delete.mockResolvedValueOnce({});
 
     const res = await request(app)
@@ -475,6 +505,7 @@ describe('DELETE /api/deck/:id', () => {
 
     expect(res.status).toBe(204);
     expect(db.change.deleteMany).toHaveBeenCalledWith({ where: { commitId: { in: ['commit-1', 'commit-2'] } } });
+    expect(db.deckCard.deleteMany).toHaveBeenCalledWith({ where: { decklistId: { in: ['dlist-1', 'dlist-2'] } } });
     expect(db.commit.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['commit-1', 'commit-2'] } } });
     expect(db.deck.delete).toHaveBeenCalledWith({ where: { id: 'deck-1' } });
   });
@@ -505,9 +536,6 @@ describe('DELETE /api/deck/:id/:branch', () => {
     db.branch.findFirst.mockResolvedValueOnce({ decklistId: 'dlist-1' });
     db.branch.count.mockResolvedValueOnce(3);
     db.commit.findMany.mockResolvedValueOnce([{ id: 'commit-1' }]);
-    db.change.deleteMany.mockResolvedValueOnce({});
-    db.snapShot.deleteMany.mockResolvedValueOnce({});
-    db.commit.deleteMany.mockResolvedValueOnce({});
     db.branch.delete.mockResolvedValueOnce({});
     db.decklist.delete.mockResolvedValueOnce({});
 
@@ -517,6 +545,7 @@ describe('DELETE /api/deck/:id/:branch', () => {
 
     expect(res.status).toBe(204);
     expect(db.change.deleteMany).toHaveBeenCalled();
+    expect(db.deckCard.deleteMany).toHaveBeenCalledWith({ where: { decklistId: 'dlist-1' } });
     expect(db.branch.delete).toHaveBeenCalledWith({ where: { id: 'branch-1' } });
   });
 

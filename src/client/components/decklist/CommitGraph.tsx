@@ -12,7 +12,7 @@ const COL_W = 16;
 const ROW_H = 72;
 const NODE_R = 5;
 
-interface PendingChange { action: 'ADD' | 'REMOVE'; cardName: string; }
+interface PendingChange { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string; }
 
 interface Props {
   nodes: CommitNode[];
@@ -164,9 +164,9 @@ const CommitGraph = ({
             {pendingChanges.map((ch, i) => (
               <Box key={i} sx={{
                 fontFamily: SR.fontMono, fontSize: 11, lineHeight: 1.7,
-                color: ch.action === 'ADD' ? SR.diffAdd : SR.diffRemove,
+                color: ch.action === 'ADD' ? SR.diffAdd : ch.action === 'MOVE' ? SR.accentGold : SR.diffRemove,
               }}>
-                {ch.action === 'ADD' ? '+ ' : '− '}{ch.cardName}
+                {ch.action === 'ADD' ? '+ ' : ch.action === 'MOVE' ? '→ ' : '− '}{ch.cardName}
               </Box>
             ))}
           </Box>
