@@ -162,7 +162,7 @@ const SearchDrawer = ({ open, onClose, currentCards, pendingChanges, onAdd, onRe
             {results.map(card => {
               const committed = currentCards.filter(c => c.id === card.id).length;
               const effectiveCount = committed + (pendingChanges.get(card.id)?.MAIN ?? 0);
-              const imgUrl = card.faces?.[0]?.imageUrl || card.imageUrl;
+              const imgUrl = card.defaultArt?.faces?.[0]?.imageUrl ?? card.defaultArt?.imageUrl ?? null;
 
               const btnSx = {
                 flexShrink: 0, width: 26, height: 26, borderRadius: '5px', cursor: 'pointer',

@@ -3,14 +3,30 @@ import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import Typography from "@mui/material/Typography";
 
-export interface CardFace { name: string; imageUrl: string | null; artCropUrl?: string | null; }
-export interface Card { id: string; name: string; imageUrl: string | null; artCropUrl?: string | null; typeLine?: string | null; faces: CardFace[]; }
+export interface CardArtFace { name: string; imageUrl: string | null; artCropUrl: string | null; }
+export interface CardArt {
+  id: string; oracleId: string; name: string;
+  imageUrl: string | null; artCropUrl: string | null;
+  set: string | null; setName: string | null; artist: string | null;
+  faces: CardArtFace[];
+}
+
+export interface CardFace { name: string; typeLine?: string | null; cmc?: number | null; }
+export interface Card {
+  id: string; name: string;
+  oracleId?: string | null;
+  typeLine?: string | null; cmc?: number | null;
+  oracleText?: string | null; layout?: string | null;
+  faces: CardFace[];
+  defaultArt?: CardArt | null;
+}
 
 export const cardDisplayName = (card: Card) =>
   card.faces?.length > 0 ? card.faces.map((f) => f.name).join(" // ") : card.name;
 
 export interface CardImageProps {
   card: Card;
+  art?: CardArt | null;
   action?: React.ReactNode;
   dimmed?: boolean;
   addedHighlight?: boolean;
@@ -22,10 +38,18 @@ const circularSx = {
   padding: 0,
 };
 
-const CardImage = ({ card, action, dimmed, addedHighlight }: CardImageProps) => {
+const CardImage = ({ card, art, action, dimmed, addedHighlight }: CardImageProps) => {
   const [faceIdx, setFaceIdx] = useState(0);
+  const resolvedArt = art ?? card.defaultArt ?? null;
   const isMultiFace = (card.faces?.length ?? 0) >= 2;
-  const imageUrl = isMultiFace ? card.faces[faceIdx].imageUrl : card.imageUrl;
+
+  let imageUrl: string | null = null;
+  if (isMultiFace) {
+    const artFace = resolvedArt?.faces?.find(f => f.name === card.faces[faceIdx]?.name);
+    imageUrl = artFace?.imageUrl ?? resolvedArt?.imageUrl ?? null;
+  } else {
+    imageUrl = resolvedArt?.imageUrl ?? null;
+  }
 
   return (
     <Box

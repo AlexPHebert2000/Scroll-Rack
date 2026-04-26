@@ -62,10 +62,10 @@ describe('Decklist', () => {
 // Shared fixture helpers for the tests below
 // ---------------------------------------------------------------------------
 
-const card1: Card = { id: 'c1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt.jpg', faces: [] };
-const card2: Card = { id: 'c2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', faces: [] };
+const card1: Card = { id: 'c1', name: 'Lightning Bolt', faces: [], defaultArt: { id: 'c1', oracleId: 'o1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
+const card2: Card = { id: 'c2', name: 'Dark Ritual', faces: [], defaultArt: { id: 'c2', oracleId: 'o2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
 
-const deckWith = (cards: Card[], commits = []) => ({
+const deckWith = (cards: Card[], commits: any[] = []) => ({
   data: {
     id: 'deck-1',
     name: 'Test Deck',

@@ -4,7 +4,7 @@ import Divider from '@mui/material/Divider';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import { SR } from '../../theme';
-import type { Card } from '../CardImage';
+import type { Card, CardArt } from '../CardImage';
 import { cardDisplayName } from '../CardImage';
 
 export type BoardKey = 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING';
@@ -49,6 +49,13 @@ const PortraitIcon = () => (
   </svg>
 );
 
+const ArtIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1.5" y="3" width="7" height="7" rx="1" />
+    <rect x="3.5" y="1" width="7" height="7" rx="1" />
+  </svg>
+);
+
 // ── Card row ──────────────────────────────────────────────────────────────────
 
 interface RowProps {
@@ -59,15 +66,18 @@ interface RowProps {
   board: BoardKey;
   isMoveHere?: boolean;
   isMoveAway?: boolean;
+  artCropUrl?: string | null;
+  hasArtOverride?: boolean;
   onAddOne: () => void;
   onRemoveOne: () => void;
   onRemoveAll: () => void;
   onOpenSetCount: () => void;
   onSetPortrait?: () => void;
+  onSelectArt?: () => void;
   onMove: (toBoard: BoardKey) => void;
 }
 
-const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, isMoveAway, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove }: RowProps) => {
+const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, isMoveAway, artCropUrl, hasArtOverride, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onSelectArt, onMove }: RowProps) => {
   const [hov, setHov] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
@@ -106,7 +116,7 @@ const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, i
 
       {hov || Boolean(menuAnchor) ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-          {onSetPortrait && card.artCropUrl && (
+          {onSetPortrait && artCropUrl && (
             <Box
               component="button"
               onClick={onSetPortrait}
@@ -119,6 +129,23 @@ const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, i
               }}
             >
               <PortraitIcon />
+            </Box>
+          )}
+          {onSelectArt && (
+            <Box
+              component="button"
+              onClick={onSelectArt}
+              title={hasArtOverride ? 'Change art (custom)' : 'Select art variant'}
+              sx={{
+                background: 'none',
+                border: `0.5px solid ${hasArtOverride ? SR.accentTealLight : SR.border}`,
+                borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
+                color: hasArtOverride ? SR.accentTealLight : SR.textFaint,
+                display: 'flex', alignItems: 'center',
+                '&:hover': { borderColor: SR.textMuted, color: SR.textMuted },
+              }}
+            >
+              <ArtIcon />
             </Box>
           )}
           <Box
@@ -172,15 +199,17 @@ interface GroupProps {
   board: BoardKey;
   isCommander?: boolean;
   pendingChanges: Map<string, Partial<Record<BoardKey, number>>>;
+  resolveArt?: (card: Card) => CardArt | null;
   onAddOne: (card: Card) => void;
   onRemoveOne: (id: string) => void;
   onRemoveAll: (id: string) => void;
   onOpenSetCount: (id: string) => void;
   onSetPortrait: (url: string) => void;
+  onSelectArt?: (card: Card) => void;
   onMove: (card: Card, toBoard: BoardKey) => void;
 }
 
-const CardGroup = ({ label, counted, board, isCommander, pendingChanges, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove }: GroupProps) => {
+const CardGroup = ({ label, counted, board, isCommander, pendingChanges, resolveArt, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onSelectArt, onMove }: GroupProps) => {
   const total = counted.reduce((s, { card, count }) => {
     const eff = count + (pendingChanges.get(card.id)?.[board] ?? 0);
     return s + Math.max(0, eff);
@@ -208,6 +237,9 @@ const CardGroup = ({ label, counted, board, isCommander, pendingChanges, onAddOn
         // Hide rows that have been fully moved to another board
         if (isMoveAway && effectiveCount <= 0) return null;
 
+        const resolvedArt = resolveArt ? resolveArt(card) : (card.defaultArt ?? null);
+        const artCropUrl = resolvedArt?.artCropUrl ?? null;
+        const hasArtOverride = Boolean(resolvedArt && resolvedArt.id !== (card.defaultArt?.id ?? ''));
         return (
           <CardRow
             key={card.id}
@@ -218,11 +250,14 @@ const CardGroup = ({ label, counted, board, isCommander, pendingChanges, onAddOn
             board={board}
             isMoveHere={isMoveHere}
             isMoveAway={isMoveAway}
+            artCropUrl={artCropUrl}
+            hasArtOverride={hasArtOverride}
             onAddOne={() => onAddOne(card)}
             onRemoveOne={() => onRemoveOne(card.id)}
             onRemoveAll={() => onRemoveAll(card.id)}
             onOpenSetCount={() => onOpenSetCount(card.id)}
-            onSetPortrait={card.artCropUrl ? () => onSetPortrait(card.artCropUrl!) : undefined}
+            onSetPortrait={artCropUrl ? () => onSetPortrait(artCropUrl) : undefined}
+            onSelectArt={onSelectArt ? () => onSelectArt(card) : undefined}
             onMove={toBoard => onMove(card, toBoard)}
           />
         );
@@ -290,17 +325,19 @@ interface Props {
   side: BoardPack;
   considering: BoardPack;
   pendingChanges: Map<string, Partial<Record<BoardKey, number>>>;
+  resolveArt?: (card: Card) => CardArt | null;
   onAddOne: (card: Card, board: BoardKey) => void;
   onRemoveOne: (id: string, board: BoardKey) => void;
   onRemoveAll: (id: string, board: BoardKey) => void;
   onOpenSetCount: (id: string, board: BoardKey) => void;
   onSetPortrait: (url: string) => void;
+  onSelectArt?: (card: Card) => void;
   onMove: (card: Card, fromBoard: BoardKey, toBoard: BoardKey) => void;
 }
 
 const CardListView = ({
   activeBoard, main, commander, side, considering,
-  pendingChanges, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
+  pendingChanges, resolveArt, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onSelectArt, onMove,
 }: Props) => {
 
   const renderGrid = (groups: GroupDef[]) => {
@@ -317,11 +354,13 @@ const CardListView = ({
                 board={g.board}
                 isCommander={g.isCommander}
                 pendingChanges={pendingChanges}
+                resolveArt={resolveArt}
                 onAddOne={card => onAddOne(card, g.board)}
                 onRemoveOne={id => onRemoveOne(id, g.board)}
                 onRemoveAll={id => onRemoveAll(id, g.board)}
                 onOpenSetCount={id => onOpenSetCount(id, g.board)}
                 onSetPortrait={onSetPortrait}
+                onSelectArt={onSelectArt}
                 onMove={(card, toBoard) => onMove(card, g.board, toBoard)}
               />
             ))}

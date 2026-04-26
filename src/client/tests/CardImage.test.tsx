@@ -3,57 +3,64 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CardImage, { cardDisplayName } from '../components/CardImage';
-import type { Card } from '../components/CardImage';
+import type { Card, CardArt } from '../components/CardImage';
+
+const makeArt = (imageUrl: string | null, faces?: { name: string; imageUrl: string | null; artCropUrl: string | null }[]): CardArt => ({
+  id: 'art-1', oracleId: 'oracle-1', name: 'Test', imageUrl, artCropUrl: null,
+  set: null, setName: null, artist: null, faces: faces ?? [],
+});
 
 const singleFaceCard: Card = {
   id: 'card-1',
   name: 'Lightning Bolt',
-  imageUrl: 'https://example.com/bolt.jpg',
   faces: [],
+  defaultArt: makeArt('https://example.com/bolt.jpg'),
 };
 
 const noImageCard: Card = {
   id: 'card-2',
   name: 'Dark Ritual',
-  imageUrl: null,
   faces: [],
+  defaultArt: makeArt(null),
 };
 
 const doubleFacedCard: Card = {
   id: 'card-3',
   name: 'Delver of Secrets',
-  imageUrl: null,
   faces: [
-    { name: 'Delver of Secrets', imageUrl: 'https://example.com/delver-front.jpg' },
-    { name: 'Insectile Aberration', imageUrl: 'https://example.com/delver-back.jpg' },
+    { name: 'Delver of Secrets' },
+    { name: 'Insectile Aberration' },
   ],
+  defaultArt: makeArt(null, [
+    { name: 'Delver of Secrets', imageUrl: 'https://example.com/delver-front.jpg', artCropUrl: null },
+    { name: 'Insectile Aberration', imageUrl: 'https://example.com/delver-back.jpg', artCropUrl: null },
+  ]),
 };
 
 describe('cardDisplayName', () => {
   it('returns card.name for a single-face card', () => {
-    expect(cardDisplayName({ id: 'x', name: 'Lightning Bolt', imageUrl: null, faces: [] })).toBe('Lightning Bolt');
+    expect(cardDisplayName({ id: 'x', name: 'Lightning Bolt', faces: [] })).toBe('Lightning Bolt');
   });
 
   it('joins face names with " // " for a multi-face card', () => {
     const card: Card = {
       id: 'x',
       name: 'Delver of Secrets',
-      imageUrl: null,
       faces: [
-        { name: 'Delver of Secrets', imageUrl: null },
-        { name: 'Insectile Aberration', imageUrl: null },
+        { name: 'Delver of Secrets' },
+        { name: 'Insectile Aberration' },
       ],
     };
     expect(cardDisplayName(card)).toBe('Delver of Secrets // Insectile Aberration');
   });
 
   it('falls back to card.name when faces is an empty array', () => {
-    expect(cardDisplayName({ id: 'x', name: 'Dark Ritual', imageUrl: null, faces: [] })).toBe('Dark Ritual');
+    expect(cardDisplayName({ id: 'x', name: 'Dark Ritual', faces: [] })).toBe('Dark Ritual');
   });
 
   it('does not throw when faces is undefined', () => {
     expect(() =>
-      cardDisplayName({ id: 'x', name: 'Fireball', imageUrl: null, faces: undefined as any })
+      cardDisplayName({ id: 'x', name: 'Fireball', faces: undefined as any })
     ).not.toThrow();
   });
 });
@@ -116,5 +123,12 @@ describe('CardImage', () => {
     const { container } = render(<CardImage card={doubleFacedCard} />);
     const flipButton = container.querySelector('button.card-overlay');
     expect(flipButton).toBeInTheDocument();
+  });
+
+  it('uses the passed art prop over defaultArt', () => {
+    const overrideArt = makeArt('https://example.com/alt.jpg');
+    render(<CardImage card={singleFaceCard} art={overrideArt} />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', 'https://example.com/alt.jpg');
   });
 });

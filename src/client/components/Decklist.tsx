@@ -14,7 +14,7 @@ import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
-import CardImage, { Card, cardDisplayName } from './CardImage';
+import CardImage, { Card, CardArt, cardDisplayName } from './CardImage';
 import CommitGraph from './decklist/CommitGraph';
 import type { Commit } from './decklist/CommitGraph';
 import ArtBanner from './decklist/ArtBanner';
@@ -31,14 +31,18 @@ import { SR } from '../theme';
 
 type BoardDeltas = Partial<Record<BoardKey, number>>;
 
-interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; commander: Card[]; considering: Card[]; }
 interface WorkingTreeMeta { lastModifiedAt: string; isCurrentSession: boolean; stagedChanges: StagedChangeRecord[]; }
 interface Branch { id: string; name: string; headCommitId: string | null; decklist: DecklistState; commits: Commit[]; workingTree: WorkingTreeMeta | null; }
 
-interface SyncChange { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number; }
-interface StagedChangeRecord { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number; card: Card; }
+type SyncChange =
+  | { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number }
+  | { action: 'SET_ART'; cardId: string; artId: string };
 
-function pendingChangesToSync(changes: Map<string, BoardDeltas>): SyncChange[] {
+type StagedChangeRecord =
+  | { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number; card: Card }
+  | { action: 'SET_ART'; cardId: string; artId: string | null; card: Card; cardArt: CardArt | null };
+
+function pendingChangesToSync(changes: Map<string, BoardDeltas>, artChanges: Map<string, CardArt>): SyncChange[] {
   const result: SyncChange[] = [];
   changes.forEach((boardDeltas, cardId) => {
     (Object.entries(boardDeltas) as [BoardKey, number][]).forEach(([board, delta]) => {
@@ -46,14 +50,19 @@ function pendingChangesToSync(changes: Map<string, BoardDeltas>): SyncChange[] {
       result.push({ action: delta > 0 ? 'ADD' : 'REMOVE', board, cardId, count: Math.abs(delta) });
     });
   });
+  artChanges.forEach((art, cardId) => {
+    result.push({ action: 'SET_ART', cardId, artId: art.id });
+  });
   return result;
 }
+interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; commander: Card[]; considering: Card[]; artPreferences?: Record<string, CardArt>; }
 interface Deck {
   id: string; name: string;
   portraitUrl: string | null;
   branches: Branch[];
   allBranches: { id: string; name: string }[];
   graphBranches: GraphBranch[];
+  artPreferences?: Record<string, CardArt>;
 }
 
 const ALL_BOARDS: BoardKey[] = ['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING'];
@@ -113,10 +122,11 @@ const Tag = ({ children, variant = 'neutral' }: { children: React.ReactNode; var
 // ── Image card item ────────────────────────────────────────────────────────────
 
 const ImageCardItem = ({
-  card, effective, committed, board,
+  card, art, effective, committed, board,
   onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
 }: {
   card: Card;
+  art?: CardArt | null;
   effective: number;
   committed: number;
   board: BoardKey;
@@ -142,7 +152,7 @@ const ImageCardItem = ({
       onMouseLeave={() => { if (!menuAnchor) setHovered(false); }}
       sx={{ position: 'relative', borderRadius: '8px' }}
     >
-      <CardImage card={card} dimmed={pendingAdded && committed === 0} />
+      <CardImage card={card} art={art} dimmed={pendingAdded && committed === 0} />
 
       {pendingRemoved && (
         <Box sx={{
@@ -193,7 +203,7 @@ const ImageCardItem = ({
         <MenuItem onClick={() => { onOpenSetCount(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Set count</MenuItem>
         <MenuItem onClick={() => { onRemoveOne(); closeMenu(); }} disabled={effective <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Remove 1</MenuItem>
         <MenuItem onClick={() => { onRemoveAll(); closeMenu(); }} disabled={effective <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.accentRed }}>Remove all</MenuItem>
-        {onSetPortrait && card.artCropUrl && [
+        {onSetPortrait && art?.artCropUrl && [
           <Divider key="d" />,
           <MenuItem key="p" onClick={() => { onSetPortrait!(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Set as portrait</MenuItem>,
         ]}
@@ -213,7 +223,7 @@ const ImageCardItem = ({
 
 const ImagesView = ({
   activeBoard, main, commander, side, considering,
-  pendingChanges, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
+  pendingChanges, resolveArt, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
 }: {
   activeBoard: 'main' | 'side' | 'considering';
   main: BoardPack;
@@ -221,6 +231,7 @@ const ImagesView = ({
   side: BoardPack;
   considering: BoardPack;
   pendingChanges: Map<string, BoardDeltas>;
+  resolveArt?: (card: Card) => CardArt | null;
   onAddOne: (card: Card, board: BoardKey) => void;
   onRemoveOne: (id: string, board: BoardKey) => void;
   onRemoveAll: (id: string, board: BoardKey) => void;
@@ -228,12 +239,13 @@ const ImagesView = ({
   onSetPortrait: (url: string) => void;
   onMove: (card: Card, fromBoard: BoardKey, toBoard: BoardKey) => void;
 }) => {
-  type DedupedItem = { card: Card; committed: number; board: BoardKey; effective: number };
+  type DedupedItem = { card: Card; committed: number; board: BoardKey; effective: number; resolvedArt: CardArt | null };
 
   const toItems = (counted: CountedCard[], board: BoardKey): DedupedItem[] =>
     counted.map(({ card, count }) => ({
       card, committed: count, board,
       effective: count + (pendingChanges.get(card.id)?.[board] ?? 0),
+      resolvedArt: resolveArt ? resolveArt(card) : (card.defaultArt ?? null),
     }));
 
   const Section = ({ title, items, board }: { title: string; items: DedupedItem[]; board: BoardKey }) => (
@@ -242,10 +254,11 @@ const ImagesView = ({
         {title}
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(186px, 1fr))', gap: '12px' }}>
-        {items.map(({ card, committed, effective }) => (
+        {items.map(({ card, committed, effective, resolvedArt }) => (
           <ImageCardItem
             key={card.id}
             card={card}
+            art={resolvedArt}
             effective={effective}
             committed={committed}
             board={board}
@@ -253,7 +266,7 @@ const ImagesView = ({
             onRemoveOne={() => onRemoveOne(card.id, board)}
             onRemoveAll={() => onRemoveAll(card.id, board)}
             onOpenSetCount={() => onOpenSetCount(card.id, board)}
-            onSetPortrait={card.artCropUrl ? () => onSetPortrait(card.artCropUrl!) : undefined}
+            onSetPortrait={resolvedArt?.artCropUrl ? () => onSetPortrait(resolvedArt!.artCropUrl!) : undefined}
             onMove={toBoard => onMove(card, board, toBoard)}
           />
         ))}
@@ -337,7 +350,11 @@ const Decklist = () => {
 
   // Board-aware pending changes: cardId → per-board net deltas
   const [pendingChanges, setPendingChanges] = useState<Map<string, BoardDeltas>>(new Map());
-  const hasPending = pendingChanges.size > 0;
+  // Art changes pending commit: cardId → CardArt selected
+  const [pendingArtChanges, setPendingArtChanges] = useState<Map<string, CardArt>>(new Map());
+  const [artPickerCard, setArtPickerCard] = useState<Card | null>(null);
+
+  const hasPending = pendingChanges.size > 0 || pendingArtChanges.size > 0;
 
   // ── Working tree sync ────────────────────────────────────────────────────────
 
@@ -356,6 +373,7 @@ const Decklist = () => {
       axios.post(`/api/deck/${id}/${bid}/quick-commit`),
     onSuccess: () => {
       setPendingChanges(new Map());
+      setPendingArtChanges(new Map());
       setSessionConflict(false);
       queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
     },
@@ -368,6 +386,39 @@ const Decklist = () => {
     queryFn: () => axios.get(`/api/deck/${id}/${branchId}/${selectedCommit}`),
     enabled: isViewingHistory && Boolean(branchId && selectedCommit),
   });
+
+  // Server-side art preferences (oracleId → CardArt)
+  const artPreferences: Record<string, CardArt> = deck?.artPreferences ?? {};
+
+  // Art picker lazy query — only fetches when picker is open
+  const artPickerQ = useQuery<CardArt[]>({
+    queryKey: ['cardArts', artPickerCard?.oracleId],
+    queryFn: () =>
+      axios.get<CardArt[]>(`/api/scryfall/arts?oracleId=${artPickerCard!.oracleId}`).then(r => r.data),
+    enabled: Boolean(artPickerCard?.oracleId),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const resolveArt = (card: Card): CardArt | null => {
+    if (isViewingHistory) {
+      const histPrefs = historicalQ.data?.data?.artPreferences;
+      if (histPrefs && card.oracleId && histPrefs[card.oracleId]) return histPrefs[card.oracleId];
+      return card.defaultArt ?? null;
+    }
+    const pending = pendingArtChanges.get(card.id);
+    if (pending) return pending;
+    if (card.oracleId && artPreferences[card.oracleId]) return artPreferences[card.oracleId];
+    return card.defaultArt ?? null;
+  };
+
+  const handleSelectArt = (art: CardArt) => {
+    if (!artPickerCard) return;
+    const n = new Map(pendingArtChanges);
+    n.set(artPickerCard.id, art);
+    setPendingArtChanges(n);
+    setArtPickerCard(null);
+    debouncedSync(pendingChanges, n);
+  };
 
   const branchMutation = useMutation({
     mutationFn: ({ sourceCommitId, branchName }: { sourceCommitId: string; branchName?: string }) =>
@@ -405,7 +456,14 @@ const Decklist = () => {
     if (!deck) return;
     const lines: string[] = [];
     const addSection = (title: string, pack: typeof boardPacks.main, board: BoardKey) => {
-      const items = dedupeBoard(pack, board, displayPendingChanges).filter(({ effective }) => effective > 0);
+      const countMap = new Map<string, { card: Card; count: number }>();
+      [...pack.committed, ...pack.added].forEach(c => {
+        const e = countMap.get(c.id);
+        if (e) e.count++; else countMap.set(c.id, { card: c, count: 1 });
+      });
+      const items = [...countMap.values()].map(({ card, count }) => ({
+        card, effective: count + (displayPendingChanges.get(card.id)?.[board] ?? 0),
+      })).filter(({ effective }) => effective > 0);
       if (!items.length) return;
       lines.push(title);
       items.forEach(({ card, effective }) => lines.push(`${effective} ${card.name}`));
@@ -424,10 +482,10 @@ const Decklist = () => {
     URL.revokeObjectURL(url);
   };
 
-  const debouncedSync = (newChanges: Map<string, BoardDeltas>) => {
+  const debouncedSync = (newChanges: Map<string, BoardDeltas>, newArtChanges: Map<string, CardArt> = pendingArtChanges) => {
     if (!branchId) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    const changes = pendingChangesToSync(newChanges);
+    const changes = pendingChangesToSync(newChanges, newArtChanges);
     syncTimerRef.current = setTimeout(() => {
       syncMutation.mutate({ bid: branchId, changes });
     }, 300);
@@ -439,15 +497,25 @@ const Decklist = () => {
 
   useEffect(() => {
     const staged = currentBranch?.workingTree?.stagedChanges;
-    if (!staged?.length) return;
+    if (!staged?.length) {
+      setPendingChanges(new Map());
+      setPendingArtChanges(new Map());
+      return;
+    }
     const map = new Map<string, BoardDeltas>();
-    staged.forEach(({ action, board, cardId, count, card }) => {
-      queryClient.setQueryData(['card', cardId], card);
-      const existing = map.get(cardId) ?? {};
-      const delta = action === 'ADD' ? count : -count;
-      map.set(cardId, { ...existing, [board]: (existing[board] ?? 0) + delta });
+    const artMap = new Map<string, CardArt>();
+    staged.forEach((sc) => {
+      if (sc.action === 'SET_ART') {
+        if (sc.cardArt) artMap.set(sc.cardId, sc.cardArt);
+        return;
+      }
+      queryClient.setQueryData(['card', sc.cardId], sc.card);
+      const existing = map.get(sc.cardId) ?? {};
+      const delta = sc.action === 'ADD' ? sc.count : -sc.count;
+      map.set(sc.cardId, { ...existing, [sc.board]: (existing[sc.board] ?? 0) + delta });
     });
     setPendingChanges(map);
+    setPendingArtChanges(artMap);
   }, [currentBranch?.id]);
 
   // ── Board helpers ────────────────────────────────────────────────────────────
@@ -557,7 +625,7 @@ const Decklist = () => {
       clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
     }
-    const changes = pendingChangesToSync(pendingChanges);
+    const changes = pendingChangesToSync(pendingChanges, pendingArtChanges);
     await syncMutation.mutateAsync({ bid: branchId, changes });
     await quickCommitMutation.mutateAsync({ bid: branchId });
   };
@@ -588,7 +656,7 @@ const Decklist = () => {
     ?? id;
 
   const pendingChangesList: { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string }[] =
-    [...pendingChanges.entries()].flatMap(([cid, boardDeltas]) => {
+    [...pendingChanges.entries()].flatMap(([cid, boardDeltas]): { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string }[] => {
       const entries = Object.entries(boardDeltas) as [BoardKey, number][];
       const removes = entries.filter(([, d]) => d < 0);
       const adds = entries.filter(([, d]) => d > 0);
@@ -662,7 +730,7 @@ const Decklist = () => {
     let autoPortrait: string | null | undefined;
     if (!deck?.portraitUrl) {
       const portraitCard = commanderCards[0] ?? [...mainCards, ...addedToMain].find(c => (pendingChanges.get(c.id)?.MAIN ?? 0) >= 0);
-      autoPortrait = portraitCard?.artCropUrl ?? null;
+      autoPortrait = portraitCard ? (resolveArt(portraitCard)?.artCropUrl ?? null) : null;
     }
 
     commitMutation.mutate({
@@ -697,7 +765,7 @@ const Decklist = () => {
 
   const pendingCount = [...pendingChanges.values()].reduce((sum, boards) =>
     sum + Object.values(boards).reduce((a, b) => a + Math.abs(b), 0), 0
-  );
+  ) + pendingArtChanges.size;
 
   // ── Board packs ───────────────────────────────────────────────────────────────
 
@@ -949,11 +1017,13 @@ const Decklist = () => {
               side={boardPacks.side}
               considering={boardPacks.considering}
               pendingChanges={displayPendingChanges}
+              resolveArt={resolveArt}
               onAddOne={stageAdd}
               onRemoveOne={stageRemove}
               onRemoveAll={stageRemoveAll}
               onOpenSetCount={openSetCount}
               onSetPortrait={handleSetPortrait}
+              onSelectArt={isViewingHistory ? undefined : setArtPickerCard}
               onMove={stageMove}
             />
           )}
@@ -965,6 +1035,7 @@ const Decklist = () => {
               side={boardPacks.side}
               considering={boardPacks.considering}
               pendingChanges={displayPendingChanges}
+              resolveArt={resolveArt}
               onAddOne={stageAdd}
               onRemoveOne={stageRemove}
               onRemoveAll={stageRemoveAll}
@@ -989,9 +1060,9 @@ const Decklist = () => {
 
       {/* ── Portrait picker dialog ─────────────────────────────────────────── */}
       {(() => {
-        const pickerCards = [...commanderCards, ...mainCards, ...addedToMain].filter(
-          (c, i, arr) => c.artCropUrl && arr.findIndex(x => x.id === c.id) === i
-        );
+        const pickerCards = [...commanderCards, ...mainCards, ...addedToMain]
+          .filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i)
+          .filter(c => Boolean(resolveArt(c)?.artCropUrl));
         return (
           <Dialog open={portraitPickerOpen} onClose={() => setPortraitPickerOpen(false)} fullWidth maxWidth="md">
             <DialogTitle sx={{ fontFamily: SR.fontUi, fontSize: 14, pb: 1 }}>Choose Deck Portrait</DialogTitle>
@@ -1002,23 +1073,26 @@ const Decklist = () => {
                 </Typography>
               ) : (
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
-                  {pickerCards.map(card => (
-                    <Box
-                      key={card.id}
-                      onClick={() => { handleSetPortrait(card.artCropUrl!); setPortraitPickerOpen(false); }}
-                      sx={{
-                        cursor: 'pointer', borderRadius: '6px', overflow: 'hidden',
-                        border: deck?.portraitUrl === card.artCropUrl ? `1.5px solid ${SR.accentTealLight}` : `0.5px solid ${SR.border}`,
-                        '&:hover': { borderColor: SR.textMuted }, transition: 'border-color 120ms',
-                      }}
-                    >
-                      <Box component="img" src={card.artCropUrl!} alt={cardDisplayName(card)}
-                        sx={{ width: '100%', display: 'block', aspectRatio: '626 / 457', objectFit: 'cover' }} />
-                      <Box sx={{ padding: '6px 10px', fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted, backgroundColor: SR.surfacePanel, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {cardDisplayName(card)}
+                  {pickerCards.map(card => {
+                    const cropUrl = resolveArt(card)!.artCropUrl!;
+                    return (
+                      <Box
+                        key={card.id}
+                        onClick={() => { handleSetPortrait(cropUrl); setPortraitPickerOpen(false); }}
+                        sx={{
+                          cursor: 'pointer', borderRadius: '6px', overflow: 'hidden',
+                          border: deck?.portraitUrl === cropUrl ? `1.5px solid ${SR.accentTealLight}` : `0.5px solid ${SR.border}`,
+                          '&:hover': { borderColor: SR.textMuted }, transition: 'border-color 120ms',
+                        }}
+                      >
+                        <Box component="img" src={cropUrl} alt={cardDisplayName(card)}
+                          sx={{ width: '100%', display: 'block', aspectRatio: '626 / 457', objectFit: 'cover' }} />
+                        <Box sx={{ padding: '6px 10px', fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted, backgroundColor: SR.surfacePanel, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {cardDisplayName(card)}
+                        </Box>
                       </Box>
-                    </Box>
-                  ))}
+                    );
+                  })}
                 </Box>
               )}
             </DialogContent>
@@ -1028,6 +1102,64 @@ const Decklist = () => {
           </Dialog>
         );
       })()}
+
+      {/* ── Art picker dialog ──────────────────────────────────────────────── */}
+      <Dialog open={Boolean(artPickerCard)} onClose={() => setArtPickerCard(null)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ fontFamily: SR.fontUi, fontSize: 14, pb: 1 }}>
+          Select Art — {artPickerCard ? cardDisplayName(artPickerCard) : ''}
+        </DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          {artPickerQ.isFetching ? (
+            <Typography sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.textFaint, py: 2 }}>Loading arts…</Typography>
+          ) : !artPickerCard?.oracleId ? (
+            <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint, py: 2 }}>No oracle ID — cannot look up alternate arts.</Typography>
+          ) : (artPickerQ.data ?? []).length === 0 ? (
+            <Typography sx={{ fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint, py: 2 }}>
+              No alternate art found. Run the arts download to import additional printings.
+            </Typography>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+              {(artPickerQ.data ?? []).map(art => {
+                const cropUrl = art.faces?.[0]?.artCropUrl ?? art.artCropUrl;
+                const currentArtId = artPickerCard ? resolveArt(artPickerCard)?.id : null;
+                const isSelected = art.id === currentArtId;
+                return (
+                  <Box
+                    key={art.id}
+                    onClick={() => handleSelectArt(art)}
+                    sx={{
+                      cursor: 'pointer', borderRadius: '6px', overflow: 'hidden',
+                      border: isSelected ? `1.5px solid ${SR.accentTealLight}` : `0.5px solid ${SR.border}`,
+                      '&:hover': { borderColor: SR.textMuted },
+                      transition: 'border-color 120ms',
+                    }}
+                  >
+                    {cropUrl ? (
+                      <Box component="img" src={cropUrl} alt={art.name}
+                        sx={{ width: '100%', display: 'block', aspectRatio: '626 / 457', objectFit: 'cover' }} />
+                    ) : (
+                      <Box sx={{ width: '100%', aspectRatio: '626 / 457', backgroundColor: SR.surfaceCard, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography variant="caption" sx={{ color: SR.textFaint }}>No image</Typography>
+                      </Box>
+                    )}
+                    <Box sx={{ padding: '6px 10px', backgroundColor: SR.surfacePanel }}>
+                      <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {art.setName ?? art.set ?? ''}
+                      </Box>
+                      <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, color: SR.textFaint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {art.artist ?? ''}
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setArtPickerCard(null)} variant="outlined">Cancel</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Set count dialog ────────────────────────────────────────────────── */}
       <Dialog open={Boolean(setCountTarget)} onClose={() => setSetCountTarget(null)} fullWidth maxWidth="xs">
