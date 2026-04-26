@@ -1,12 +1,12 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import axios from 'axios';
 import Decklist from '../components/Decklist';
-import type { Card } from '../components/CardImage';
+import type { Card, CardArt } from '../components/CardImage';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -20,6 +20,18 @@ import { useParams } from 'react-router-dom';
 const mockUseParams = useParams as jest.Mock;
 
 beforeEach(() => jest.clearAllMocks());
+
+// Hover over a card row to reveal the action buttons.
+// userEvent.hover() doesn't trigger onMouseEnter on ancestor elements in JSDOM;
+// we fire the event directly on the row container instead.
+const hoverCardRow = (cardName: string) =>
+  fireEvent.mouseEnter(screen.getByText(cardName).parentElement!);
+
+// Hover to reveal hover buttons, open the "···" menu, then click a menu item by name.
+const openCardMenu = async (cardName: string) => {
+  hoverCardRow(cardName);
+  await userEvent.click(screen.getByRole('button', { name: '···' }));
+};
 
 const renderDecklist = () => {
   const queryClient = new QueryClient({
@@ -62,15 +74,36 @@ describe('Decklist', () => {
 // Shared fixture helpers for the tests below
 // ---------------------------------------------------------------------------
 
-const card1: Card = { id: 'c1', name: 'Lightning Bolt', faces: [], defaultArt: { id: 'c1', oracleId: 'o1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
-const card2: Card = { id: 'c2', name: 'Dark Ritual', faces: [], defaultArt: { id: 'c2', oracleId: 'o2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
+const card1: Card = { id: 'c1', name: 'Lightning Bolt', oracleId: 'o1', faces: [], defaultArt: { id: 'c1', oracleId: 'o1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
+const card2: Card = { id: 'c2', name: 'Dark Ritual', oracleId: 'o2', faces: [], defaultArt: { id: 'c2', oracleId: 'o2', name: 'Dark Ritual', imageUrl: 'https://example.com/ritual.jpg', artCropUrl: null, set: null, setName: null, artist: null, faces: [] } };
 
-const deckWith = (cards: Card[], commits: any[] = []) => ({
+const altArt: CardArt = { id: 'art-alt', oracleId: 'o1', name: 'Lightning Bolt', imageUrl: 'https://example.com/bolt-alt.jpg', artCropUrl: null, set: 'lea', setName: 'Alpha', artist: 'Christopher Rush', faces: [] };
+
+const deckWith = (cards: Card[], commits: any[] = [], headCommitId: string | null = null) => ({
   data: {
     id: 'deck-1',
     name: 'Test Deck',
     graphBranches: [],
-    branches: [{ id: 'branch-1', name: 'main', headCommitId: null, decklist: { mainDeck: cards, sideBoard: [], commander: [] }, commits }],
+    branches: [{ id: 'branch-1', name: 'main', headCommitId, decklist: { mainDeck: cards, sideBoard: [], commander: [] }, commits }],
+    allBranches: [{ id: 'branch-1', name: 'main' }],
+  },
+});
+
+// Fixture for history/commit-switching tests — includes graphBranches so commit rows render
+const headCommit = { id: 'aaabbbccc111222', description: 'Head commit', createdAt: '2024-02-01T00:00:00Z', changes: [] };
+const oldCommit  = { id: 'dddeeefff333444', description: 'Old commit',  createdAt: '2024-01-01T00:00:00Z', changes: [] };
+
+const deckWithHistory = (cards: Card[] = [card1]) => ({
+  data: {
+    id: 'deck-1',
+    name: 'Test Deck',
+    graphBranches: [{ id: 'branch-1', name: 'main', commits: [oldCommit, headCommit] }],
+    branches: [{
+      id: 'branch-1', name: 'main',
+      headCommitId: headCommit.id,
+      decklist: { mainDeck: cards, sideBoard: [], commander: [] },
+      commits: [headCommit, oldCommit],
+    }],
     allBranches: [{ id: 'branch-1', name: 'main' }],
   },
 });
@@ -95,8 +128,8 @@ describe('Decklist — commit flow', () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    await userEvent.hover(screen.getByText('Lightning Bolt'));
-    await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
     expect(screen.getByRole('button', { name: /^commit$/i })).toBeInTheDocument();
   });
 
@@ -104,8 +137,8 @@ describe('Decklist — commit flow', () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    await userEvent.hover(screen.getByText('Lightning Bolt'));
-    await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
     await userEvent.click(screen.getByRole('button', { name: /^commit$/i }));
     expect(screen.getByLabelText(/describe your changes/i)).toBeInTheDocument();
   });
@@ -117,8 +150,8 @@ describe('Decklist — commit flow', () => {
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
 
     // Stage a removal then open dialog
-    await userEvent.hover(screen.getByText('Lightning Bolt'));
-    await userEvent.click(screen.getByRole('button', { name: /remove/i }));
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
     await userEvent.click(screen.getByRole('button', { name: /^commit$/i }));
     await userEvent.type(screen.getByLabelText(/describe your changes/i), 'Remove a card');
     // Scope to the dialog to disambiguate from the header Commit button
@@ -127,7 +160,7 @@ describe('Decklist — commit flow', () => {
     expect(mockedAxios.post).toHaveBeenCalledWith('/api/deck/deck-1/branch-1',
       expect.objectContaining({
         description: 'Remove a card',
-        changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'c1' }],
+        changes: [{ action: 'REMOVE', board: 'MAIN', cardId: 'c1', count: 1 }],
         mainDeck: [],
         sideBoard: [],
       })
@@ -179,9 +212,9 @@ describe('Decklist — pending state management', () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1, card2]));
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    await userEvent.hover(screen.getByText('Lightning Bolt'));
-    await userEvent.click(screen.getByRole('button', { name: /remove/i }));
-    expect(screen.getByText('1 uncommitted changes')).toBeInTheDocument();
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    expect(screen.getByText('1 uncommitted change')).toBeInTheDocument();
   });
 });
 
@@ -199,5 +232,161 @@ describe('Decklist — commit graph sidebar', () => {
     mockedAxios.get.mockResolvedValue(deckWith([], [commit]));
     renderDecklist();
     await waitFor(() => expect(screen.getAllByText('First commit').length).toBeGreaterThan(0));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Commit history navigation
+// ---------------------------------------------------------------------------
+
+describe('Decklist — commit history navigation', () => {
+  beforeEach(() => {
+    mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
+  });
+
+  it('clicking a non-HEAD commit row enters history mode and shows the history banner', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory());
+    renderDecklist();
+    // Old commit appears in both the graph and the diff panel — [0] = graph row
+    await waitFor(() => expect(screen.getAllByText('Old commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Old commit')[0]);
+    expect(screen.getByRole('button', { name: /return to head/i })).toBeInTheDocument();
+  });
+
+  it('history mode shows the selected commit short hash in the banner', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory());
+    renderDecklist();
+    await waitFor(() => expect(screen.getAllByText('Old commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Old commit')[0]);
+    // Short hash appears in the history banner (may also appear elsewhere in the graph)
+    await waitFor(() =>
+      expect(screen.getAllByText(oldCommit.id.slice(0, 7)).length).toBeGreaterThan(0)
+    );
+  });
+
+  it('"Return to HEAD" button dismisses the history banner', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory());
+    renderDecklist();
+    await waitFor(() => expect(screen.getAllByText('Old commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Old commit')[0]);
+    expect(screen.getByRole('button', { name: /return to head/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /return to head/i }));
+    expect(screen.queryByRole('button', { name: /return to head/i })).not.toBeInTheDocument();
+  });
+
+  it('history mode fires GET for the historical snapshot at the correct URL', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory());
+    renderDecklist();
+    await waitFor(() => expect(screen.getAllByText('Old commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Old commit')[0]);
+    await waitFor(() =>
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        `/api/deck/deck-1/branch-1/${oldCommit.id}`
+      )
+    );
+  });
+
+  it('clicking the HEAD commit does not enter history mode', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory());
+    renderDecklist();
+    await waitFor(() => expect(screen.getAllByText('Head commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Head commit')[0]);
+    expect(screen.queryByRole('button', { name: /return to head/i })).not.toBeInTheDocument();
+  });
+
+  it('in history mode, the "Commit" button is not shown', async () => {
+    mockedAxios.get.mockResolvedValue(deckWithHistory([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getAllByText('Old commit').length).toBeGreaterThan(0));
+    await userEvent.click(screen.getAllByText('Old commit')[0]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /return to head/i })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^commit$/i })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Art selection
+// ---------------------------------------------------------------------------
+
+describe('Decklist — art selection', () => {
+  beforeEach(() => {
+    mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
+  });
+
+  it('art icon button is visible on hover for cards that have an oracleId', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    hoverCardRow('Lightning Bolt');
+    expect(screen.getByRole('button', { name: /select art/i })).toBeInTheDocument();
+  });
+
+  it('clicking the art icon opens the art picker dialog', async () => {
+    // arts endpoint returns empty so picker shows "No alternate art found"
+    mockedAxios.get.mockImplementation((url: string) =>
+      url.includes('/api/scryfall/arts')
+        ? Promise.resolve({ data: [] })
+        : Promise.resolve(deckWith([card1]))
+    );
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    hoverCardRow('Lightning Bolt');
+    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+  });
+
+  it('pending art change increments the uncommitted changes count', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      url.includes('/api/scryfall/arts')
+        ? Promise.resolve({ data: [altArt] })
+        : Promise.resolve(deckWith([card1]))
+    );
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    // Open art picker
+    hoverCardRow('Lightning Bolt');
+    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    // Wait for art grid to load and select an art tile
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Alpha'));
+    // A pending art change should be reflected in the pending count
+    await waitFor(() => expect(screen.getByText('1 uncommitted change')).toBeInTheDocument());
+  });
+
+  it('art change is synced as SET_ART in the working-tree PUT when Quick Commit is clicked', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      url.includes('/api/scryfall/arts')
+        ? Promise.resolve({ data: [altArt] })
+        : Promise.resolve(deckWith([card1]))
+    );
+    // Quick Commit flushes the working tree via PUT then POSTs quick-commit.
+    // Use mockResolvedValue (not Once) since the debounced sync may also fire PUT.
+    mockedAxios.put.mockResolvedValue({ data: {} });
+    mockedAxios.post.mockResolvedValue({ data: {} });
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+
+    // Stage an art change
+    hoverCardRow('Lightning Bolt');
+    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Alpha'));
+    await waitFor(() => expect(screen.getByText('1 uncommitted change')).toBeInTheDocument());
+    // Wait for the art picker dialog to fully close (MUI exit animation ~195ms)
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /select art/i })).not.toBeInTheDocument()
+    );
+
+    // Click "Quick Commit" — this immediately syncs the working tree with the SET_ART change
+    await userEvent.click(screen.getByRole('button', { name: /quick commit/i }));
+
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      '/api/deck/deck-1/branch-1/working-tree',
+      expect.objectContaining({
+        changes: expect.arrayContaining([
+          { action: 'SET_ART', cardId: 'c1', artId: 'art-alt' },
+        ]),
+      })
+    );
   });
 });
