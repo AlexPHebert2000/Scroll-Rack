@@ -4,6 +4,7 @@ import { SR } from '../../theme';
 import type { Card, CardArt } from '../CardImage';
 import { cardDisplayName } from '../CardImage';
 import CardMenu from './CardMenu';
+import ManaSymbols from './ManaSymbols';
 
 export type BoardKey = 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING';
 
@@ -143,10 +144,14 @@ const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, i
           </Box>
         </Box>
       ) : (
-        !pendingAdded && !pendingRemoved && card.typeLine && (
-          <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint, flexShrink: 0 }}>
-            {card.typeLine.split('—')[0].trim()}
-          </Box>
+        !pendingAdded && !pendingRemoved && (
+          card.manaCost
+            ? <ManaSymbols cost={card.manaCost} size={14} />
+            : card.typeLine && (
+                <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint, flexShrink: 0 }}>
+                  {card.typeLine.split('—')[0].trim()}
+                </Box>
+              )
         )
       )}
 

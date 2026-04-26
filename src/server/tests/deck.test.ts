@@ -44,10 +44,30 @@ jest.mock('../db', () => ({
     card: {
       findMany: jest.fn(),
     },
+    cardArt: {
+      findMany: jest.fn(),
+    },
+    decklistArtPreference: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    workingTree: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    stagedChange: {
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     session: {
       findUniqueOrThrow: jest.fn(),
     },
     $transaction: jest.fn(),
+    $runCommandRaw: jest.fn(),
   },
 }));
 
@@ -60,8 +80,13 @@ const db = prisma as {
   change: { deleteMany: jest.Mock };
   snapShot: { deleteMany: jest.Mock; delete: jest.Mock };
   card: { findMany: jest.Mock };
+  cardArt: { findMany: jest.Mock };
+  decklistArtPreference: { findMany: jest.Mock; deleteMany: jest.Mock };
+  workingTree: { findUnique: jest.Mock; findMany: jest.Mock; create: jest.Mock; update: jest.Mock; delete: jest.Mock; deleteMany: jest.Mock };
+  stagedChange: { createMany: jest.Mock; deleteMany: jest.Mock };
   session: { findUniqueOrThrow: jest.Mock };
   $transaction: jest.Mock;
+  $runCommandRaw: jest.Mock;
 };
 
 const SESSION_COOKIE = 'scroll-rack-session=test-session-id';
@@ -75,6 +100,13 @@ beforeEach(() => {
   db.session.findUniqueOrThrow.mockResolvedValue(VALID_SESSION);
   db.deckCard.createMany.mockResolvedValue({ count: 0 });
   db.deckCard.deleteMany.mockResolvedValue({ count: 0 });
+  db.cardArt.findMany.mockResolvedValue([]);
+  db.decklistArtPreference.findMany.mockResolvedValue([]);
+  db.workingTree.findUnique.mockResolvedValue(null);
+  db.workingTree.findMany.mockResolvedValue([]);
+  db.workingTree.delete.mockResolvedValue({});
+  db.workingTree.deleteMany.mockResolvedValue({ count: 0 });
+  db.stagedChange.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -231,7 +263,7 @@ describe('GET /api/deck/:id/:branch', () => {
 
 describe('POST /api/deck/:id/:branch', () => {
   it('returns 201 on successful commit', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-1', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     const res = await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -247,7 +279,7 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('uses the branch id (not deck id) when updating (regression)', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-abc', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-abc', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     await request(app)
       .post('/api/deck/deck-1/branch-abc')
@@ -265,7 +297,7 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('replaces decklist via deckCard deleteMany then createMany', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-1', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -286,7 +318,7 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('creates DeckCard entries with count > 1 for duplicate card ids in mainDeck', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-1', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -306,7 +338,7 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('sets headCommitId to match the new commit id', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-1', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')
@@ -324,7 +356,7 @@ describe('POST /api/deck/:id/:branch', () => {
   });
 
   it('records commit history with changes in the branch.update call', async () => {
-    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', branches: [{ id: 'branch-1', decklistId: 'dlist-1' }] });
+    db.deck.findFirstOrThrow.mockResolvedValueOnce({ id: 'deck-1', portraitUrl: null, branches: [{ id: 'branch-1', decklistId: 'dlist-1', _count: { commits: 0 }, workingTree: null }] });
 
     await request(app)
       .post('/api/deck/deck-1/branch-1')

@@ -674,8 +674,8 @@ const Decklist = () => {
     ?? queryClient.getQueryData<Card>(['card', id])?.name
     ?? id;
 
-  const pendingChangesList: { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string }[] =
-    [...pendingChanges.entries()].flatMap(([cid, boardDeltas]): { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string }[] => {
+  const pendingChangesList: { action: 'ADD' | 'REMOVE' | 'MOVE' | 'SET_ART'; cardName: string }[] = [
+    ...[...pendingChanges.entries()].flatMap(([cid, boardDeltas]): { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string }[] => {
       const entries = Object.entries(boardDeltas) as [BoardKey, number][];
       const removes = entries.filter(([, d]) => d < 0);
       const adds = entries.filter(([, d]) => d > 0);
@@ -693,7 +693,12 @@ const Decklist = () => {
           cardName: `${d}× ${name}${removes.length + adds.length > 1 ? ` (${BOARD_LABELS[board]})` : ''}`,
         })),
       ];
-    });
+    }),
+    ...[...pendingArtChanges.entries()].map(([cid, art]) => ({
+      action: 'SET_ART' as const,
+      cardName: `${getCardName(cid)} → ${art.setName ?? art.set ?? 'alt art'}`,
+    })),
+  ];
 
   // ── Portrait mutation ────────────────────────────────────────────────────────
 
@@ -826,12 +831,12 @@ const Decklist = () => {
       />
 
       {/* ── Centre: Deck view ───────────────────────────────────────────────── */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background:'#e0dacb' }}>
 
         <ArtBanner deckName={deck?.name ?? ''} portraitUrl={deck?.portraitUrl ?? null} onChangePortrait={() => setPortraitPickerOpen(true)} />
 
         {/* Deck header */}
-        <Box sx={{ padding: '14px 20px 0', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0 }}>
+        <Box sx={{ padding: '14px 20px 0', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0, background:'#eae5d8' }}>
 
           {/* Title row */}
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '12px' }}>

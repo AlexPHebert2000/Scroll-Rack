@@ -16,6 +16,7 @@ model Card {
   oracleId      String?
   typeLine      String?
   cmc           Float?
+  manaCost      String?
   oracleText    String?
   layout        String?
   faces         CardFace[]

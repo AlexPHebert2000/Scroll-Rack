@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import { SR } from '../../theme';
 import type { CommitNode } from './graphUtils';
 
-export interface Change { action: string; card: { id: string; name: string }; }
+export interface Change { action: 'ADD' | 'REMOVE' | 'SET_ART'; card: { id: string; name: string }; }
 export interface Commit { id: string; description: string; createdAt: string; changes: Change[]; }
 
 const GRAPH_BG = '#161B20';
@@ -12,7 +12,7 @@ const COL_W = 16;
 const ROW_H = 72;
 const NODE_R = 5;
 
-interface PendingChange { action: 'ADD' | 'REMOVE' | 'MOVE'; cardName: string; }
+interface PendingChange { action: 'ADD' | 'REMOVE' | 'MOVE' | 'SET_ART'; cardName: string; }
 
 interface Props {
   nodes: CommitNode[];
@@ -164,9 +164,9 @@ const CommitGraph = ({
             {pendingChanges.map((ch, i) => (
               <Box key={i} sx={{
                 fontFamily: SR.fontMono, fontSize: 11, lineHeight: 1.7,
-                color: ch.action === 'ADD' ? SR.diffAdd : ch.action === 'MOVE' ? SR.accentGold : SR.diffRemove,
+                color: ch.action === 'ADD' ? SR.diffAdd : ch.action === 'REMOVE' ? SR.diffRemove : SR.accentGold,
               }}>
-                {ch.action === 'ADD' ? '+ ' : ch.action === 'MOVE' ? '→ ' : '− '}{ch.cardName}
+                {ch.action === 'ADD' ? '+ ' : ch.action === 'REMOVE' ? '− ' : ch.action === 'SET_ART' ? '⇄ ' : '→ '}{ch.cardName}
               </Box>
             ))}
           </Box>
@@ -185,9 +185,9 @@ const CommitGraph = ({
             {c.changes.map((ch, i) => (
               <Box key={i} sx={{
                 fontFamily: SR.fontMono, fontSize: 11, lineHeight: 1.7,
-                color: ch.action === 'ADD' ? SR.diffAdd : SR.diffRemove,
+                color: ch.action === 'ADD' ? SR.diffAdd : ch.action === 'SET_ART' ? SR.accentGold : SR.diffRemove,
               }}>
-                {ch.action === 'ADD' ? '+ ' : '− '}{ch.card.name}
+                {ch.action === 'ADD' ? '+ ' : ch.action === 'SET_ART' ? '⇄ ' : '− '}{ch.card.name}
               </Box>
             ))}
           </Box>

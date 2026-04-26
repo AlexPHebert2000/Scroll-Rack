@@ -7,16 +7,18 @@ jest.mock('axios');
 jest.mock('../db', () => ({
   __esModule: true,
   default: {
-    card: {
-      findMany: jest.fn(),
-    },
+    card: { findMany: jest.fn() },
+    cardArt: { findMany: jest.fn() },
   },
 }));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
-const db = prisma as { card: { findMany: jest.Mock } };
+const db = prisma as { card: { findMany: jest.Mock }; cardArt: { findMany: jest.Mock } };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  db.cardArt.findMany.mockResolvedValue([]);
+});
 
 describe('GET /api/scryfall/search', () => {
   it('returns matching cards from the local database', async () => {
@@ -24,7 +26,7 @@ describe('GET /api/scryfall/search', () => {
       data: { data: [{ id: 'card-1' }, { id: 'card-2' }] },
     });
     db.card.findMany.mockResolvedValueOnce([
-      { id: 'card-1', name: 'Black Lotus', imageUrl: null, faces: [] },
+      { id: 'card-1', name: 'Black Lotus', faces: [] },
     ]);
 
     const res = await request(app).get('/api/scryfall/search?qString=lotus');

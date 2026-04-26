@@ -271,7 +271,7 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
             changes: {
               select: {
                 action: true, board: true, cardId: true, count: true, artId: true,
-                card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
+                card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, manaCost: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
               },
             },
           },
@@ -360,7 +360,7 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
                 stagedChanges: {
                   select: {
                     action: true, board: true, cardId: true, count: true, artId: true,
-                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, manaCost: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
                     cardArt: { select: { id: true, oracleId: true, name: true, imageUrl: true, artCropUrl: true, set: true, setName: true, artist: true, faces: { select: { name: true, imageUrl: true, artCropUrl: true }, orderBy: { order: 'asc' } } } },
                   },
                 },
@@ -370,7 +370,7 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
               include: {
                 deckCards: {
                   include: {
-                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, manaCost: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
                   },
                 },
               },
