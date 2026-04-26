@@ -18,16 +18,16 @@ export const BOARD_LABELS: Record<BoardKey, string> = {
 
 const ALL_BOARDS: BoardKey[] = ['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING'];
 
-const TYPE_ORDER = ['Planeswalker', 'Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Battle', 'Land'];
+export const TYPE_ORDER = ['Planeswalker', 'Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Battle', 'Land'];
 
-function getPrimaryType(typeLine: string | null | undefined): string {
+export function getPrimaryType(typeLine: string | null | undefined): string {
   for (const t of TYPE_ORDER) {
     if (typeLine?.includes(t)) return t;
   }
   return 'Other';
 }
 
-interface CountedCard { card: Card; count: number; }
+export interface CountedCard { card: Card; count: number; }
 
 function dedupeWithCount(cards: Card[]): CountedCard[] {
   const map = new Map<string, CountedCard>();
@@ -235,9 +235,15 @@ const CardGroup = ({ label, counted, board, isCommander, pendingChanges, onAddOn
 
 export interface BoardPack { committed: Card[]; added: Card[]; }
 
-type GroupDef = { key: string; label: string; counted: CountedCard[]; board: BoardKey; isCommander?: boolean };
+export type GroupDef = { key: string; label: string; counted: CountedCard[]; board: BoardKey; isCommander?: boolean };
 
-function buildTypeGroups(committed: Card[], added: Card[], board: BoardKey, excludeAddedIds: Set<string>): GroupDef[] {
+const TYPE_LABELS: Record<string, string> = {
+  Sorcery: 'Sorceries', Land: 'Lands',
+};
+const byCmc = (arr: CountedCard[]) =>
+  [...arr].sort((a, b) => (a.card.cmc ?? 0) - (b.card.cmc ?? 0) || a.card.name.localeCompare(b.card.name));
+
+export function buildTypeGroups(committed: Card[], added: Card[], board: BoardKey, excludeAddedIds: Set<string>): GroupDef[] {
   const deduped = dedupeWithCount(committed);
   const seen = new Set(committed.map(c => c.id));
   for (const c of added) {
@@ -254,12 +260,13 @@ function buildTypeGroups(committed: Card[], added: Card[], board: BoardKey, excl
     grouped[t].push(cc);
   });
 
+  const label = (t: string) => TYPE_LABELS[t] ?? `${t}s`;
   const result: GroupDef[] = [];
   TYPE_ORDER.filter(t => t !== 'Land').forEach(t => {
-    if (grouped[t]?.length) result.push({ key: t, label: `${t}s`, counted: grouped[t], board });
+    if (grouped[t]?.length) result.push({ key: t, label: label(t), counted: byCmc(grouped[t]), board });
   });
-  if (grouped['Other']?.length) result.push({ key: 'other', label: 'Other', counted: grouped['Other'], board });
-  if (grouped['Land']?.length) result.push({ key: 'lands', label: 'Lands', counted: grouped['Land'], board });
+  if (grouped['Other']?.length) result.push({ key: 'other', label: 'Other', counted: byCmc(grouped['Other']), board });
+  if (grouped['Land']?.length) result.push({ key: 'lands', label: 'Lands', counted: byCmc(grouped['Land']), board });
   return result;
 }
 

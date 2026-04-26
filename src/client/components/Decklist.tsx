@@ -20,7 +20,8 @@ import type { Commit } from './decklist/CommitGraph';
 import ArtBanner from './decklist/ArtBanner';
 import CardListView from './decklist/CardListView';
 import type { BoardKey, BoardPack } from './decklist/CardListView';
-import { BOARD_LABELS } from './decklist/CardListView';
+import { BOARD_LABELS, buildTypeGroups } from './decklist/CardListView';
+import type { CountedCard, GroupDef } from './decklist/CardListView';
 import SearchDrawer from './decklist/SearchDrawer';
 import { buildGraph, buildBranchColors } from './decklist/graphUtils';
 import type { GraphBranch } from './decklist/graphUtils';
@@ -31,7 +32,22 @@ import { SR } from '../theme';
 type BoardDeltas = Partial<Record<BoardKey, number>>;
 
 interface DecklistState { mainDeck: Card[]; sideBoard: Card[]; commander: Card[]; considering: Card[]; }
-interface Branch { id: string; name: string; headCommitId: string | null; decklist: DecklistState; commits: Commit[]; }
+interface WorkingTreeMeta { lastModifiedAt: string; isCurrentSession: boolean; stagedChanges: StagedChangeRecord[]; }
+interface Branch { id: string; name: string; headCommitId: string | null; decklist: DecklistState; commits: Commit[]; workingTree: WorkingTreeMeta | null; }
+
+interface SyncChange { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number; }
+interface StagedChangeRecord { action: 'ADD' | 'REMOVE'; board: BoardKey; cardId: string; count: number; card: Card; }
+
+function pendingChangesToSync(changes: Map<string, BoardDeltas>): SyncChange[] {
+  const result: SyncChange[] = [];
+  changes.forEach((boardDeltas, cardId) => {
+    (Object.entries(boardDeltas) as [BoardKey, number][]).forEach(([board, delta]) => {
+      if (delta === 0) return;
+      result.push({ action: delta > 0 ? 'ADD' : 'REMOVE', board, cardId, count: Math.abs(delta) });
+    });
+  });
+  return result;
+}
 interface Deck {
   id: string; name: string;
   portraitUrl: string | null;
@@ -41,6 +57,38 @@ interface Deck {
 }
 
 const ALL_BOARDS: BoardKey[] = ['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING'];
+
+// ── Deck text format parser ────────────────────────────────────────────────────
+
+interface ParsedCard { name: string; count: number; board: BoardKey; }
+
+const SECTION_HEADERS: Record<string, BoardKey> = {
+  'deck': 'MAIN', 'main': 'MAIN', 'mainboard': 'MAIN', 'main deck': 'MAIN',
+  'sideboard': 'SIDE', 'side': 'SIDE', 'sb': 'SIDE', 'side board': 'SIDE',
+  'commander': 'COMMANDER', 'commanders': 'COMMANDER',
+  'maybeboard': 'CONSIDERING', 'maybe': 'CONSIDERING', 'considering': 'CONSIDERING',
+};
+
+function parseDeckText(text: string): { cards: ParsedCard[]; skipped: string[] } {
+  let currentBoard: BoardKey = 'MAIN';
+  const cards: ParsedCard[] = [];
+  const skipped: string[] = [];
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (lower === 'about' || lower.startsWith('name ') || line.startsWith('//')) continue;
+    if (SECTION_HEADERS[lower] !== undefined) { currentBoard = SECTION_HEADERS[lower]; continue; }
+
+    // "4 Card Name" or "4x Card Name", optionally followed by "(SET) 123"
+    const m = line.match(/^(\d+)[xX]?\s+(.+?)(?:\s+\([^)]+\)(?:\s+\d+)?)?$/);
+    if (m) { cards.push({ name: m[2].trim(), count: parseInt(m[1], 10), board: currentBoard }); continue; }
+
+    skipped.push(line);
+  }
+  return { cards, skipped };
+}
 
 // ── Small UI primitives ────────────────────────────────────────────────────────
 
@@ -162,21 +210,6 @@ const ImageCardItem = ({
 
 // ── Images view ───────────────────────────────────────────────────────────────
 
-function dedupeBoard(pack: BoardPack, board: BoardKey, pendingChanges: Map<string, BoardDeltas>) {
-  const map = new Map<string, { card: Card; committed: number }>();
-  pack.committed.forEach(c => {
-    const e = map.get(c.id);
-    if (e) e.committed++;
-    else map.set(c.id, { card: c, committed: 1 });
-  });
-  pack.added.forEach(c => {
-    if (!map.has(c.id)) map.set(c.id, { card: c, committed: 0 });
-  });
-  return [...map.values()].map(({ card, committed }) => ({
-    card, committed, board,
-    effective: committed + (pendingChanges.get(card.id)?.[board] ?? 0),
-  }));
-}
 
 const ImagesView = ({
   activeBoard, main, commander, side, considering,
@@ -195,12 +228,13 @@ const ImagesView = ({
   onSetPortrait: (url: string) => void;
   onMove: (card: Card, fromBoard: BoardKey, toBoard: BoardKey) => void;
 }) => {
-  const dedupedCmd = useMemo(() => dedupeBoard(commander, 'COMMANDER', pendingChanges), [commander, pendingChanges]);
-  const allMain = useMemo(() => dedupeBoard(main, 'MAIN', pendingChanges), [main, pendingChanges]);
-  const allSide = useMemo(() => dedupeBoard(side, 'SIDE', pendingChanges), [side, pendingChanges]);
-  const allConsidering = useMemo(() => dedupeBoard(considering, 'CONSIDERING', pendingChanges), [considering, pendingChanges]);
+  type DedupedItem = { card: Card; committed: number; board: BoardKey; effective: number };
 
-  type DedupedItem = ReturnType<typeof dedupeBoard>[number];
+  const toItems = (counted: CountedCard[], board: BoardKey): DedupedItem[] =>
+    counted.map(({ card, count }) => ({
+      card, committed: count, board,
+      effective: count + (pendingChanges.get(card.id)?.[board] ?? 0),
+    }));
 
   const Section = ({ title, items, board }: { title: string; items: DedupedItem[]; board: BoardKey }) => (
     <Box sx={{ mb: '24px' }}>
@@ -227,23 +261,41 @@ const ImagesView = ({
     </Box>
   );
 
+  const cmdExclude = new Set(commander.committed.map(c => c.id));
+  const cmdGroups = buildTypeGroups(commander.committed, commander.added, 'COMMANDER', new Set());
+  const cmdItems = cmdGroups.flatMap(g => toItems(g.counted, 'COMMANDER'));
+
   if (activeBoard === 'main') {
-    const spells = allMain.filter(({ card }) => !card.typeLine?.includes('Land'));
-    const lands = allMain.filter(({ card }) => card.typeLine?.includes('Land'));
+    const mainGroups = buildTypeGroups(main.committed, main.added, 'MAIN', cmdExclude);
     return (
       <Box sx={{ padding: '20px 28px' }}>
-        {dedupedCmd.length > 0 && <Section title="Commanders" items={dedupedCmd} board="COMMANDER" />}
-        {spells.length > 0 && <Section title="Spells" items={spells} board="MAIN" />}
-        {lands.length > 0 && <Section title="Lands" items={lands} board="MAIN" />}
+        {cmdItems.length > 0 && <Section title="Commanders" items={cmdItems} board="COMMANDER" />}
+        {mainGroups.map(g => (
+          <Section key={g.key} title={g.label} items={toItems(g.counted, 'MAIN')} board="MAIN" />
+        ))}
       </Box>
     );
   }
   if (activeBoard === 'side') {
-    if (!allSide.length) return <Box sx={{ padding: '40px 28px', fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint }}>No cards in sideboard.</Box>;
-    return <Box sx={{ padding: '20px 28px' }}><Section title="Sideboard" items={allSide} board="SIDE" /></Box>;
+    const sideGroups = buildTypeGroups(side.committed, side.added, 'SIDE', new Set());
+    if (!sideGroups.length) return <Box sx={{ padding: '40px 28px', fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint }}>No cards in sideboard.</Box>;
+    return (
+      <Box sx={{ padding: '20px 28px' }}>
+        {sideGroups.map(g => (
+          <Section key={g.key} title={g.label} items={toItems(g.counted, 'SIDE')} board="SIDE" />
+        ))}
+      </Box>
+    );
   }
-  if (!allConsidering.length) return <Box sx={{ padding: '40px 28px', fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint }}>No cards in considering.</Box>;
-  return <Box sx={{ padding: '20px 28px' }}><Section title="Considering" items={allConsidering} board="CONSIDERING" /></Box>;
+  const consideringGroups = buildTypeGroups(considering.committed, considering.added, 'CONSIDERING', new Set());
+  if (!consideringGroups.length) return <Box sx={{ padding: '40px 28px', fontFamily: SR.fontUi, fontSize: 13, color: SR.textFaint }}>No cards in considering.</Box>;
+  return (
+    <Box sx={{ padding: '20px 28px' }}>
+      {consideringGroups.map(g => (
+        <Section key={g.key} title={g.label} items={toItems(g.counted, 'CONSIDERING')} board="CONSIDERING" />
+      ))}
+    </Box>
+  );
 };
 
 // ── Decklist page ─────────────────────────────────────────────────────────────
@@ -279,14 +331,124 @@ const Decklist = () => {
   const [commitOpen, setCommitOpen] = useState(false);
   const [commitDesc, setCommitDesc] = useState('');
   const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
+  const [sessionConflict, setSessionConflict] = useState(false);
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [branchNameInput, setBranchNameInput] = useState('');
 
   // Board-aware pending changes: cardId → per-board net deltas
   const [pendingChanges, setPendingChanges] = useState<Map<string, BoardDeltas>>(new Map());
   const hasPending = pendingChanges.size > 0;
 
+  // ── Working tree sync ────────────────────────────────────────────────────────
+
+  const syncTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncMutation = useMutation({
+    mutationFn: ({ bid, changes }: { bid: string; changes: SyncChange[] }) =>
+      axios.put(`/api/deck/${id}/${bid}/working-tree`, { changes }),
+    onSuccess: (res) => {
+      if (res.data.conflict) setSessionConflict(true);
+    },
+  });
+
+  const quickCommitMutation = useMutation({
+    mutationFn: ({ bid }: { bid: string }) =>
+      axios.post(`/api/deck/${id}/${bid}/quick-commit`),
+    onSuccess: () => {
+      setPendingChanges(new Map());
+      setSessionConflict(false);
+      queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
+    },
+  });
+
+  const isViewingHistory = Boolean(selectedCommit && selectedCommit !== headCommitId);
+
+  const historicalQ = useQuery<{ data: DecklistState }>({
+    queryKey: ['commitSnapshot', id, branchId, selectedCommit],
+    queryFn: () => axios.get(`/api/deck/${id}/${branchId}/${selectedCommit}`),
+    enabled: isViewingHistory && Boolean(branchId && selectedCommit),
+  });
+
+  const branchMutation = useMutation({
+    mutationFn: ({ sourceCommitId, branchName }: { sourceCommitId: string; branchName?: string }) =>
+      axios.post<{ branchId: string; branchName: string }>(`/api/deck/${id}/branch`, { sourceCommitId, branchName: branchName || undefined }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
+      setBranchDialogOpen(false);
+      setBranchNameInput('');
+      navigate(`/deck/${id}/${res.data.branchId}`);
+    },
+  });
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importNotFound, setImportNotFound] = useState<string[]>([]);
+
+  const importMutation = useMutation({
+    mutationFn: ({ bid, cards }: { bid: string; cards: ParsedCard[] }) =>
+      axios.post<{ commitId: string | null; notFound: string[] }>(`/api/deck/${id}/${bid}/import`, { cards }),
+    onSuccess: (res) => {
+      setImportNotFound(res.data.notFound);
+      queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
+      if (res.data.notFound.length === 0) { setImportDialogOpen(false); setImportText(''); }
+    },
+  });
+
+  const handleImport = () => {
+    if (!branchId) return;
+    const { cards } = parseDeckText(importText);
+    if (cards.length === 0) return;
+    importMutation.mutate({ bid: branchId, cards });
+  };
+
+  const handleExport = () => {
+    if (!deck) return;
+    const lines: string[] = [];
+    const addSection = (title: string, pack: typeof boardPacks.main, board: BoardKey) => {
+      const items = dedupeBoard(pack, board, displayPendingChanges).filter(({ effective }) => effective > 0);
+      if (!items.length) return;
+      lines.push(title);
+      items.forEach(({ card, effective }) => lines.push(`${effective} ${card.name}`));
+      lines.push('');
+    };
+    addSection('Commander', boardPacks.commander, 'COMMANDER');
+    addSection('Deck', boardPacks.main, 'MAIN');
+    addSection('Sideboard', boardPacks.side, 'SIDE');
+    addSection('Considering', boardPacks.considering, 'CONSIDERING');
+    const blob = new Blob([lines.join('\n').trim()], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${deck.name}-${currentBranch?.name ?? 'main'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const debouncedSync = (newChanges: Map<string, BoardDeltas>) => {
+    if (!branchId) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    const changes = pendingChangesToSync(newChanges);
+    syncTimerRef.current = setTimeout(() => {
+      syncMutation.mutate({ bid: branchId, changes });
+    }, 300);
+  };
+
   useEffect(() => {
     if (headCommitId) setSelectedCommit(headCommitId);
   }, [headCommitId]);
+
+  useEffect(() => {
+    const staged = currentBranch?.workingTree?.stagedChanges;
+    if (!staged?.length) return;
+    const map = new Map<string, BoardDeltas>();
+    staged.forEach(({ action, board, cardId, count, card }) => {
+      queryClient.setQueryData(['card', cardId], card);
+      const existing = map.get(cardId) ?? {};
+      const delta = action === 'ADD' ? count : -count;
+      map.set(cardId, { ...existing, [board]: (existing[board] ?? 0) + delta });
+    });
+    setPendingChanges(map);
+  }, [currentBranch?.id]);
 
   // ── Board helpers ────────────────────────────────────────────────────────────
 
@@ -298,16 +460,16 @@ const Decklist = () => {
   }[board]);
 
   const updateBoardDelta = (cardId: string, board: BoardKey, amount: number) => {
-    setPendingChanges(s => {
-      const n = new Map(s);
-      const existing = n.get(cardId) ?? {};
-      const next = (existing[board] ?? 0) + amount;
-      const updated = { ...existing };
-      if (next === 0) delete updated[board]; else updated[board] = next;
-      if (Object.keys(updated).length === 0) n.delete(cardId);
-      else n.set(cardId, updated);
-      return n;
-    });
+    if (isViewingHistory) { setBranchDialogOpen(true); return; }
+    const n = new Map(pendingChanges);
+    const existing = n.get(cardId) ?? {};
+    const next = (existing[board] ?? 0) + amount;
+    const updated = { ...existing };
+    if (next === 0) delete updated[board]; else updated[board] = next;
+    if (Object.keys(updated).length === 0) n.delete(cardId);
+    else n.set(cardId, updated);
+    setPendingChanges(n);
+    debouncedSync(n);
   };
 
   // ── Staging ──────────────────────────────────────────────────────────────────
@@ -322,36 +484,39 @@ const Decklist = () => {
   };
 
   const stageMove = (card: Card, fromBoard: BoardKey, toBoard: BoardKey) => {
+    if (isViewingHistory) { setBranchDialogOpen(true); return; }
     queryClient.setQueryData(['card', card.id], card);
-    setPendingChanges(s => {
-      const n = new Map(s);
-      const existing = n.get(card.id) ?? {};
-      const updated = { ...existing };
-      const fromNext = (updated[fromBoard] ?? 0) - 1;
-      if (fromNext === 0) delete updated[fromBoard]; else updated[fromBoard] = fromNext;
-      const toNext = (updated[toBoard] ?? 0) + 1;
-      if (toNext === 0) delete updated[toBoard]; else updated[toBoard] = toNext;
-      if (Object.keys(updated).length === 0) n.delete(card.id);
-      else n.set(card.id, updated);
-      return n;
-    });
+    const n = new Map(pendingChanges);
+    const existing = n.get(card.id) ?? {};
+    const updated = { ...existing };
+    const fromNext = (updated[fromBoard] ?? 0) - 1;
+    if (fromNext === 0) delete updated[fromBoard]; else updated[fromBoard] = fromNext;
+    const toNext = (updated[toBoard] ?? 0) + 1;
+    if (toNext === 0) delete updated[toBoard]; else updated[toBoard] = toNext;
+    if (Object.keys(updated).length === 0) n.delete(card.id);
+    else n.set(card.id, updated);
+    setPendingChanges(n);
+    debouncedSync(n);
   };
 
   const stageRemoveAll = (id: string, board: BoardKey) => {
+    if (isViewingHistory) { setBranchDialogOpen(true); return; }
     const committed = getBoardCards(board).filter(c => c.id === id).length;
-    setPendingChanges(s => {
-      const n = new Map(s);
-      const existing = n.get(id) ?? {};
-      const updated = { ...existing };
-      if (committed === 0) delete updated[board]; else updated[board] = -committed;
-      if (Object.keys(updated).length === 0) n.delete(id);
-      else n.set(id, updated);
-      return n;
-    });
+    const n = new Map(pendingChanges);
+    const existing = n.get(id) ?? {};
+    const updated = { ...existing };
+    if (committed === 0) delete updated[board]; else updated[board] = -committed;
+    if (Object.keys(updated).length === 0) n.delete(id);
+    else n.set(id, updated);
+    setPendingChanges(n);
+    debouncedSync(n);
   };
 
   const undoChange = (id: string) => {
-    setPendingChanges(s => { const n = new Map(s); n.delete(id); return n; });
+    const n = new Map(pendingChanges);
+    n.delete(id);
+    setPendingChanges(n);
+    debouncedSync(n);
   };
 
   // ── Set count dialog ─────────────────────────────────────────────────────────
@@ -360,6 +525,7 @@ const Decklist = () => {
   const [setCountInput, setSetCountInput] = useState('');
 
   const openSetCount = (id: string, board: BoardKey) => {
+    if (isViewingHistory) { setBranchDialogOpen(true); return; }
     const committed = getBoardCards(board).filter(c => c.id === id).length;
     const effective = committed + (pendingChanges.get(id)?.[board] ?? 0);
     setSetCountTarget({ id, board, effective });
@@ -373,16 +539,27 @@ const Decklist = () => {
     const { id, board } = setCountTarget;
     const committed = getBoardCards(board).filter(c => c.id === id).length;
     const delta = target - committed;
-    setPendingChanges(s => {
-      const n = new Map(s);
-      const existing = n.get(id) ?? {};
-      const updated = { ...existing };
-      if (delta === 0) delete updated[board]; else updated[board] = delta;
-      if (Object.keys(updated).length === 0) n.delete(id);
-      else n.set(id, updated);
-      return n;
-    });
+    const n = new Map(pendingChanges);
+    const existing = n.get(id) ?? {};
+    const updated = { ...existing };
+    if (delta === 0) delete updated[board]; else updated[board] = delta;
+    if (Object.keys(updated).length === 0) n.delete(id);
+    else n.set(id, updated);
+    setPendingChanges(n);
+    debouncedSync(n);
     setSetCountTarget(null);
+  };
+
+  const handleQuickCommit = async () => {
+    if (!branchId) return;
+    // Flush debounced sync immediately before committing
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    const changes = pendingChangesToSync(pendingChanges);
+    await syncMutation.mutateAsync({ bid: branchId, changes });
+    await quickCommitMutation.mutateAsync({ bid: branchId });
   };
 
   // ── Added cards (per board — for new cards not yet committed) ─────────────────
@@ -501,13 +678,22 @@ const Decklist = () => {
 
   const handleSetPortrait = (portraitUrl: string) => portraitMutation.mutate(portraitUrl);
 
+  // ── Historical display override ───────────────────────────────────────────────
+
+  const historicalDecklist = historicalQ.data?.data;
+  const displayMain = isViewingHistory ? (historicalDecklist?.mainDeck ?? []) : mainCards;
+  const displayCommander = isViewingHistory ? (historicalDecklist?.commander ?? []) : commanderCards;
+  const displaySide = isViewingHistory ? (historicalDecklist?.sideBoard ?? []) : sideCards;
+  const displayConsidering = isViewingHistory ? (historicalDecklist?.considering ?? []) : consideringCards;
+  const displayPendingChanges = isViewingHistory ? new Map<string, BoardDeltas>() : pendingChanges;
+
   // ── Derived stats (main + commander board) ───────────────────────────────────
 
-  const mainDelta = [...pendingChanges.values()].reduce((s, b) => s + (b.MAIN ?? 0), 0);
-  const cmdDelta = [...pendingChanges.values()].reduce((s, b) => s + (b.COMMANDER ?? 0), 0);
-  const totalCards = mainCards.length + commanderCards.length + mainDelta + cmdDelta;
-  const spellCount = [...mainCards, ...addedToMain].filter(c => !c.typeLine?.includes('Land')).length;
-  const landCount = [...mainCards, ...addedToMain].filter(c => c.typeLine?.includes('Land')).length;
+  const mainDelta = isViewingHistory ? 0 : [...pendingChanges.values()].reduce((s, b) => s + (b.MAIN ?? 0), 0);
+  const cmdDelta = isViewingHistory ? 0 : [...pendingChanges.values()].reduce((s, b) => s + (b.COMMANDER ?? 0), 0);
+  const totalCards = displayMain.length + displayCommander.length + mainDelta + cmdDelta;
+  const spellCount = [...displayMain, ...(isViewingHistory ? [] : addedToMain)].filter(c => !c.typeLine?.includes('Land')).length;
+  const landCount = [...displayMain, ...(isViewingHistory ? [] : addedToMain)].filter(c => c.typeLine?.includes('Land')).length;
 
   const pendingCount = [...pendingChanges.values()].reduce((sum, boards) =>
     sum + Object.values(boards).reduce((a, b) => a + Math.abs(b), 0), 0
@@ -516,11 +702,13 @@ const Decklist = () => {
   // ── Board packs ───────────────────────────────────────────────────────────────
 
   const boardPacks: Record<'main' | 'side' | 'commander' | 'considering', BoardPack> = {
-    main: { committed: mainCards, added: addedToMain },
-    commander: { committed: commanderCards, added: addedToCommander },
-    side: { committed: sideCards, added: addedToSide },
-    considering: { committed: consideringCards, added: addedToConsidering },
+    main: { committed: displayMain, added: isViewingHistory ? [] : addedToMain },
+    commander: { committed: displayCommander, added: isViewingHistory ? [] : addedToCommander },
+    side: { committed: displaySide, added: isViewingHistory ? [] : addedToSide },
+    considering: { committed: displayConsidering, added: isViewingHistory ? [] : addedToConsidering },
   };
+
+  const selectedCommitData = commits.find(c => c.id === selectedCommit);
 
   // ── Loading / error states ───────────────────────────────────────────────────
 
@@ -578,15 +766,28 @@ const Decklist = () => {
                   ))}
                 </Box>
                 {headCommitId && <Tag variant="gold">{headCommitId.slice(0, 7)}</Tag>}
-                {hasPending && (
-                  <Box component="span" sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
-                    {pendingCount} uncommitted change{pendingCount !== 1 ? 's' : ''}
-                  </Box>
-                )}
+                {hasPending && (() => {
+                  const wt = currentBranch?.workingTree;
+                  const showMeta = wt && !wt.isCurrentSession;
+                  return (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <Box component="span" sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
+                        {pendingCount} uncommitted change{pendingCount !== 1 ? 's' : ''}
+                      </Box>
+                      {showMeta && (
+                        <Box component="span" sx={{ fontFamily: SR.fontUi, fontSize: 10, color: SR.textFaint, fontStyle: 'italic' }}>
+                          Last modified {new Date(wt.lastModifiedAt).toLocaleDateString()} at {new Date(wt.lastModifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })()}
               </Box>
             </Box>
 
             <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Button size="small" variant="outlined" onClick={() => { setImportNotFound([]); setImportDialogOpen(true); }} sx={{ fontSize: 11 }}>Import</Button>
+              <Button size="small" variant="outlined" onClick={handleExport} sx={{ fontSize: 11 }}>Export</Button>
               <Box sx={{ display: 'flex', backgroundColor: SR.surfaceCard, border: `0.5px solid ${SR.border}`, borderRadius: '6px', overflow: 'hidden' }}>
                 {(['text', 'images'] as const).map(mode => (
                   <Box
@@ -605,12 +806,66 @@ const Decklist = () => {
                 ))}
               </Box>
               {hasPending && (
-                <Button variant="contained" size="small" onClick={() => setCommitOpen(true)} sx={{ fontSize: 11 }}>
-                  Commit
-                </Button>
+                <>
+                  <Button
+                    variant="outlined" size="small"
+                    onClick={handleQuickCommit}
+                    disabled={quickCommitMutation.isPending || syncMutation.isPending}
+                    sx={{ fontSize: 11 }}
+                  >
+                    {quickCommitMutation.isPending ? 'Committing…' : 'Quick Commit'}
+                  </Button>
+                  <Button variant="contained" size="small" onClick={() => setCommitOpen(true)} sx={{ fontSize: 11 }}>
+                    Commit
+                  </Button>
+                </>
               )}
             </Box>
           </Box>
+
+          {/* History banner */}
+          {isViewingHistory && (
+            <Box sx={{
+              mb: '8px', px: '12px', py: '8px', borderRadius: '5px',
+              backgroundColor: SR.surfacePanel, border: `0.5px solid ${SR.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <Box component="span" sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.accentGold, flexShrink: 0 }}>
+                  {selectedCommit?.slice(0, 7)}
+                </Box>
+                <Box component="span" sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedCommitData?.description ?? ''}
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                <Button size="small" variant="outlined"
+                  onClick={() => setSelectedCommit(headCommitId)}
+                  sx={{ fontSize: 10 }}
+                >
+                  Return to HEAD
+                </Button>
+                <Button size="small" variant="contained"
+                  onClick={() => setBranchDialogOpen(true)}
+                  disabled={branchMutation.isPending}
+                  sx={{ fontSize: 10 }}
+                >
+                  Branch from here
+                </Button>
+              </Box>
+            </Box>
+          )}
+
+          {/* Session conflict warning */}
+          {sessionConflict && (
+            <Box sx={{
+              mb: '8px', px: '12px', py: '6px', borderRadius: '5px',
+              backgroundColor: 'rgba(180,130,30,0.12)', border: `0.5px solid ${SR.accentGoldBorder}`,
+              fontFamily: SR.fontUi, fontSize: 11, color: SR.accentGold,
+            }}>
+              Another session has made changes to this deck. Your edits have been merged.
+            </Box>
+          )}
 
           {/* Stat bar */}
           <Box sx={{ display: 'flex', border: `0.5px solid ${SR.border}`, borderRadius: '7px', overflow: 'hidden', mb: 0 }}>
@@ -693,7 +948,7 @@ const Decklist = () => {
               commander={boardPacks.commander}
               side={boardPacks.side}
               considering={boardPacks.considering}
-              pendingChanges={pendingChanges}
+              pendingChanges={displayPendingChanges}
               onAddOne={stageAdd}
               onRemoveOne={stageRemove}
               onRemoveAll={stageRemoveAll}
@@ -709,7 +964,7 @@ const Decklist = () => {
               commander={boardPacks.commander}
               side={boardPacks.side}
               considering={boardPacks.considering}
-              pendingChanges={pendingChanges}
+              pendingChanges={displayPendingChanges}
               onAddOne={stageAdd}
               onRemoveOne={stageRemove}
               onRemoveAll={stageRemoveAll}
@@ -792,6 +1047,82 @@ const Decklist = () => {
           <Button variant="contained" onClick={handleSetCount}
             disabled={isNaN(parseInt(setCountInput, 10)) || parseInt(setCountInput, 10) < 0}
           >Set</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Import dialog ──────────────────────────────────────────────────── */}
+      <Dialog open={importDialogOpen} onClose={() => { setImportDialogOpen(false); setImportText(''); setImportNotFound([]); }} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontFamily: SR.fontUi, fontSize: 14, pb: 1 }}>Import Decklist</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <Typography sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.textMuted }}>
+            Paste a deck list below. Supports Moxfield, MTGO, and Arena formats.
+          </Typography>
+          <TextField
+            multiline fullWidth rows={14}
+            placeholder={'Commander\n1 Sol Ring\n\nDeck\n4 Lightning Bolt\n1 Mountain\n\nSideboard\n2 Negate'}
+            value={importText}
+            onChange={e => { setImportText(e.target.value); setImportNotFound([]); }}
+            inputProps={{ style: { fontFamily: 'monospace', fontSize: 12 } }}
+          />
+          {(() => {
+            const { cards } = parseDeckText(importText);
+            if (!importText.trim()) return null;
+            return (
+              <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint }}>
+                {cards.length} card entr{cards.length !== 1 ? 'ies' : 'y'} parsed
+              </Box>
+            );
+          })()}
+          {importNotFound.length > 0 && (
+            <Box sx={{ p: '10px 12px', borderRadius: '5px', backgroundColor: 'rgba(180,60,40,0.1)', border: `0.5px solid ${SR.accentRed}` }}>
+              <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.accentRed, mb: '6px' }}>
+                {importNotFound.length} card{importNotFound.length !== 1 ? 's' : ''} not found in collection:
+              </Box>
+              <Box sx={{ fontFamily: SR.fontMono, fontSize: 11, color: SR.textMuted, whiteSpace: 'pre-wrap' }}>
+                {importNotFound.join('\n')}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setImportDialogOpen(false); setImportText(''); setImportNotFound([]); }} variant="outlined">Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={importMutation.isPending || parseDeckText(importText).cards.length === 0}
+            onClick={handleImport}
+          >
+            {importMutation.isPending ? 'Importing…' : 'Import'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Branch from commit dialog ──────────────────────────────────────── */}
+      <Dialog open={branchDialogOpen} onClose={() => setBranchDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontFamily: SR.fontUi, fontSize: 14, pb: 1 }}>Branch from this commit</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important' }}>
+          <Typography sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.textMuted, mb: 2 }}>
+            {isViewingHistory
+              ? `Create a new branch from commit ${selectedCommit?.slice(0, 7)}.`
+              : 'Create a new branch to make changes from this point.'}
+          </Typography>
+          <TextField
+            autoFocus fullWidth label="Branch name (optional)"
+            value={branchNameInput}
+            onChange={e => setBranchNameInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !branchMutation.isPending && selectedCommit && branchMutation.mutate({ sourceCommitId: selectedCommit, branchName: branchNameInput })}
+            placeholder="auto-generated from commit"
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setBranchDialogOpen(false); setBranchNameInput(''); }} variant="outlined">Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={branchMutation.isPending || !selectedCommit}
+            onClick={() => selectedCommit && branchMutation.mutate({ sourceCommitId: selectedCommit, branchName: branchNameInput })}
+          >
+            {branchMutation.isPending ? 'Creating…' : 'Create Branch'}
+          </Button>
         </DialogActions>
       </Dialog>
 
