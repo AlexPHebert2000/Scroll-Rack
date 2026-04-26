@@ -1,13 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import Box from '@mui/material/Box';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { SR } from '../../theme';
 import type { Card } from '../CardImage';
-import { cardDisplayName } from '../CardImage';
 import type { BoardKey } from './CardListView';
 import ManaSymbols from './ManaSymbols';
+import SearchResult from './SearchResult';
 
 interface Props {
   open: boolean;
@@ -20,10 +19,6 @@ interface Props {
   onUndo: (id: string) => void;
 }
 
-const PREVIEW_W = 220;
-const PREVIEW_H = Math.round(PREVIEW_W * (1040 / 745));
-const PREVIEW_DELAY = 500;
-
 const WUBRG = ['W', 'U', 'B', 'R', 'G'];
 
 const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChanges, onAdd, onRemove, onUndo }: Props) => {
@@ -34,31 +29,9 @@ const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChan
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const [preview, setPreview] = useState<{ imgUrl: string; x: number; y: number } | null>(null);
-  const previewTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const mousePos = useRef({ x: 0, y: 0 });
-
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
-
-  useEffect(() => {
-    return () => {
-      clearTimeout(previewTimerRef.current);
-    };
-  }, []);
-
-  const startPreview = (imgUrl: string) => {
-    clearTimeout(previewTimerRef.current);
-    previewTimerRef.current = setTimeout(() => {
-      setPreview({ imgUrl, x: mousePos.current.x, y: mousePos.current.y });
-    }, PREVIEW_DELAY);
-  };
-
-  const clearPreview = () => {
-    clearTimeout(previewTimerRef.current);
-    setPreview(null);
-  };
 
   // Build color identity filter from all commander cards
   const colorIdentityFilter = useMemo(() => {
@@ -104,12 +77,7 @@ const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChan
   };
 
   const results = searchQ.data ?? [];
-  const width = 400;
-
-  const previewLeft = preview ? Math.max(8, preview.x - PREVIEW_W - 24) : 0;
-  const previewTop = preview
-    ? Math.max(8, Math.min(window.innerHeight - PREVIEW_H - 8, preview.y - PREVIEW_H / 2))
-    : 0;
+  const width = 480;
 
   return (
     <>
@@ -243,96 +211,20 @@ const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChan
             {results.map(card => {
               const committed = currentCards.filter(c => c.id === card.id).length;
               const effectiveCount = committed + (pendingChanges.get(card.id)?.MAIN ?? 0);
-              const imgUrl = card.defaultArt?.faces?.[0]?.imageUrl ?? card.defaultArt?.imageUrl ?? null;
-
-              const btnSx = {
-                flexShrink: 0, width: 26, height: 26, borderRadius: '5px', cursor: 'pointer',
-                backgroundColor: SR.surfaceCard, border: `0.5px solid ${SR.border}`,
-                color: SR.textMuted, fontFamily: SR.fontMono, fontSize: 16, lineHeight: 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background 80ms, border-color 80ms',
-                '&:hover': { borderColor: SR.textMuted, color: SR.textPrimary },
-                '&:disabled': { opacity: 0.3, cursor: 'default' },
-              };
-
               return (
-                <Box
+                <SearchResult
                   key={card.id}
-                  onMouseEnter={(e: React.MouseEvent) => {
-                    mousePos.current = { x: e.clientX, y: e.clientY };
-                    if (imgUrl) startPreview(imgUrl);
-                  }}
-                  onMouseMove={(e: React.MouseEvent) => {
-                    mousePos.current = { x: e.clientX, y: e.clientY };
-                  }}
-                  onMouseLeave={clearPreview}
-                  sx={{
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '7px 12px', borderBottom: `0.5px solid ${SR.border}`,
-                    transition: 'background 80ms',
-                    '&:hover': { backgroundColor: SR.surfaceCard },
-                  }}
-                >
-                  {/* Thumbnail */}
-                  <Box sx={{
-                    height: 120, borderRadius: '3px', flexShrink: 0, overflow: 'hidden',
-                    border: `0.5px solid ${SR.border}`, backgroundColor: SR.surfaceCard,
-                  }}>
-                    {imgUrl && (
-                      <img src={imgUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    )}
-                  </Box>
-
-                  {/* Card info */}
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Box sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {cardDisplayName(card)}
-                    </Box>
-                    {card.typeLine && (
-                      <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, color: SR.textFaint, mt: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {card.typeLine}
-                      </Box>
-                    )}
-                  </Box>
-
-                  {/* Count controls */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                    {effectiveCount > 0 && (
-                      <>
-                        <Box component="button" onClick={() => onRemove(card.id)} sx={btnSx}>−</Box>
-                        <Box sx={{
-                          fontFamily: SR.fontMono, fontSize: 12, color: SR.textMuted,
-                          minWidth: 18, textAlign: 'center',
-                        }}>
-                          {effectiveCount}
-                        </Box>
-                      </>
-                    )}
-                    <Box component="button" onClick={() => onAdd(card)} sx={btnSx}>+</Box>
-                  </Box>
-                </Box>
+                  card={card}
+                  effectiveCount={effectiveCount}
+                  onAdd={() => onAdd(card)}
+                  onRemove={() => onRemove(card.id)}
+                />
               );
             })}
           </Box>
         </Box>
       </Box>
 
-      {preview && createPortal(
-        <Box sx={{
-          position: 'fixed',
-          left: previewLeft,
-          top: previewTop,
-          width: PREVIEW_W,
-          borderRadius: '10px',
-          overflow: 'hidden',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
-          pointerEvents: 'none',
-          zIndex: 9999,
-        }}>
-          <img src={preview.imgUrl} alt="" style={{ width: '100%', display: 'block' }} />
-        </Box>,
-        document.body
-      )}
     </>
   );
 };
