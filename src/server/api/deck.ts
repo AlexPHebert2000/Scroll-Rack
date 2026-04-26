@@ -38,12 +38,19 @@ const portraitSchema = z.object({
 });
 
 const workingTreeSchema = z.object({
-  changes: z.array(z.object({
-    action: z.enum(['ADD', 'REMOVE']),
-    board: z.enum(['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING']),
-    cardId: z.string().min(1),
-    count: z.number().int().min(1),
-  })),
+  changes: z.array(z.union([
+    z.object({
+      action: z.enum(['ADD', 'REMOVE']),
+      board: z.enum(['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING']),
+      cardId: z.string().min(1),
+      count: z.number().int().min(1),
+    }),
+    z.object({
+      action: z.literal('SET_ART'),
+      cardId: z.string().min(1),
+      artId: z.string().min(1),
+    }),
+  ])),
 });
 
 function toCounts(ids: string[]): Map<string, number> {
@@ -103,7 +110,12 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
         commits: {
           orderBy: { createdAt: 'asc' },
           include: {
-            changes: true,
+            changes: {
+              select: {
+                action: true, board: true, cardId: true, count: true, artId: true,
+                card: { select: { oracleId: true } },
+              },
+            },
             snapshot: { select: { decklistId: true } },
           },
         },
@@ -143,11 +155,23 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
     }
 
     // Replay only the commits after the snapshot (or all if no snapshot found)
+    // Track art preferences from SET_ART changes (oracleId → artId)
     const replayFrom = snapshotIndex + 1;
-    for (let i = replayFrom; i <= targetIndex; i++) {
+    const artPrefsReplay = new Map<string, string>(); // oracleId → artId
+
+    // If there's a snapshot, also replay SET_ART changes from the beginning
+    // (snapshots only capture card state, not art preferences)
+    for (let i = 0; i <= targetIndex; i++) {
       for (const change of sourceBranch.commits[i].changes) {
-        const board = boardCards[change.board] ?? (boardCards[change.board] = new Map());
-        const count = (change as any).count ?? 1;
+        if (change.action === 'SET_ART') {
+          if ((change as any).card?.oracleId && change.artId) {
+            artPrefsReplay.set((change as any).card.oracleId, change.artId);
+          }
+          continue;
+        }
+        if (i < replayFrom) continue; // skip card changes before snapshot
+        const board = boardCards[change.board!] ?? (boardCards[change.board!] = new Map());
+        const count = change.count ?? 1;
         if (change.action === 'ADD') {
           board.set(change.cardId, (board.get(change.cardId) ?? 0) + count);
         } else {
@@ -204,6 +228,19 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
         await tx.deckCard.createMany({ data: deckCardData });
       }
 
+      // Carry art preferences forward to the new branch's decklist
+      if (artPrefsReplay.size > 0) {
+        await tx.$runCommandRaw({
+          update: 'DecklistArtPreference',
+          updates: [...artPrefsReplay.entries()].map(([oracleId, cardArtId]) => ({
+            q: { decklistId: newDecklistId, oracleId },
+            u: { $set: { decklistId: newDecklistId, oracleId, cardArtId } },
+            upsert: true,
+          })),
+          ordered: false,
+        });
+      }
+
       await tx.branch.update({ where: { id: newBranchId }, data: { headCommitId: seedCommitId } });
     });
 
@@ -232,7 +269,10 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
           orderBy: { createdAt: 'asc' },
           include: {
             changes: {
-              include: { card: { include: { faces: true } } },
+              select: {
+                action: true, board: true, cardId: true, count: true, artId: true,
+                card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
+              },
             },
           },
         },
@@ -247,10 +287,15 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
     const boardCards: Record<string, Map<string, { card: any; count: number }>> = {
       MAIN: new Map(), SIDE: new Map(), COMMANDER: new Map(), CONSIDERING: new Map(),
     };
+    const artPrefsReplay = new Map<string, string>(); // oracleId → artId
 
     for (let i = 0; i <= targetIdx; i++) {
       for (const change of foundBranch.commits[i].changes) {
-        const board = boardCards[change.board];
+        if (change.action === 'SET_ART') {
+          if (change.card.oracleId && change.artId) artPrefsReplay.set(change.card.oracleId, change.artId);
+          continue;
+        }
+        const board = boardCards[change.board!];
         const current = board.get(change.cardId);
         if (change.action === 'ADD') {
           if (current) current.count += change.count;
@@ -262,14 +307,36 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
       }
     }
 
+    // Fetch all arts needed: default (card.id === art.id) + preference overrides
+    const boardCardIds = [...new Set(Object.values(boardCards).flatMap(m => [...m.keys()]))];
+    const allArtIds = new Set([...boardCardIds, ...artPrefsReplay.values()]);
+    const artById = new Map(
+      (await prisma.cardArt.findMany({
+        where: { id: { in: [...allArtIds] } },
+        include: { faces: true },
+      })).map(a => [a.id, a])
+    );
+
+    const resolveHistoricalArt = (card: any) => {
+      const prefArtId = card.oracleId ? artPrefsReplay.get(card.oracleId) : null;
+      return prefArtId ? (artById.get(prefArtId) ?? artById.get(card.id) ?? null) : (artById.get(card.id) ?? null);
+    };
+
     const toList = (board: Map<string, { card: any; count: number }>) =>
-      [...board.values()].flatMap(({ card, count }) => Array(count).fill(card));
+      [...board.values()].flatMap(({ card, count }) =>
+        Array(count).fill({ ...card, defaultArt: resolveHistoricalArt(card) })
+      );
+
+    const artPreferences = Object.fromEntries(
+      [...artPrefsReplay.entries()].map(([oId, artId]) => [oId, artById.get(artId) ?? null])
+    );
 
     res.json({
       mainDeck: toList(boardCards.MAIN),
       sideBoard: toList(boardCards.SIDE),
       commander: toList(boardCards.COMMANDER),
       considering: toList(boardCards.CONSIDERING),
+      artPreferences,
     });
   } catch (e: any) {
     console.log(`Failed to fetch commit snapshot: ${e.message}`);
@@ -292,8 +359,9 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
                 id: true, lastModifiedAt: true, lastSessionId: true,
                 stagedChanges: {
                   select: {
-                    action: true, board: true, cardId: true, count: true,
-                    card: { select: { id: true, name: true, imageUrl: true, artCropUrl: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: true } },
+                    action: true, board: true, cardId: true, count: true, artId: true,
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
+                    cardArt: { select: { id: true, oracleId: true, name: true, imageUrl: true, artCropUrl: true, set: true, setName: true, artist: true, faces: { select: { name: true, imageUrl: true, artCropUrl: true } } } },
                   },
                 },
               },
@@ -301,7 +369,9 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
             decklist: {
               include: {
                 deckCards: {
-                  include: { card: { include: { faces: true } } },
+                  include: {
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
+                  },
                 },
               },
             },
@@ -318,27 +388,23 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
       },
     });
 
-    const byBoard = (deckCards: typeof deck.branches[0]['decklist']['deckCards'], board: string) =>
-      deckCards
-        .filter(dc => dc.board === board)
-        .flatMap(dc => Array(dc.count).fill(dc.card));
+    // Gather all card IDs from the active branch's decklist for default art lookup
+    const activeBranch = deck.branches[0];
+    const allDeckCardIds = activeBranch
+      ? [...new Set(activeBranch.decklist.deckCards.map(dc => dc.cardId))]
+      : [];
 
-    const resolvedBranches = deck.branches.map(b => ({
-      ...b,
-      decklist: {
-        mainDeck: byBoard(b.decklist.deckCards, 'MAIN'),
-        sideBoard: byBoard(b.decklist.deckCards, 'SIDE'),
-        commander: byBoard(b.decklist.deckCards, 'COMMANDER'),
-        considering: byBoard(b.decklist.deckCards, 'CONSIDERING'),
-      },
-      workingTree: b.workingTree ? {
-        lastModifiedAt: b.workingTree.lastModifiedAt,
-        isCurrentSession: b.workingTree.lastSessionId === sessionId,
-        stagedChanges: b.workingTree.stagedChanges,
-      } : null,
-    }));
-
-    const [allBranches, graphBranches] = await Promise.all([
+    const [defaultArts, artPrefsRows, allBranches, graphBranches] = await Promise.all([
+      prisma.cardArt.findMany({
+        where: { id: { in: allDeckCardIds } },
+        include: { faces: true },
+      }),
+      activeBranch
+        ? prisma.decklistArtPreference.findMany({
+            where: { decklistId: activeBranch.decklistId },
+            include: { cardArt: { include: { faces: true } } },
+          })
+        : Promise.resolve([]),
       prisma.branch.findMany({
         where: { deckId: id },
         select: { id: true, name: true },
@@ -357,7 +423,30 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
       }),
     ]);
 
-    res.send({ ...deck, branches: resolvedBranches, allBranches, graphBranches });
+    const defaultArtById = new Map(defaultArts.map(a => [a.id, a]));
+    const artPreferences = Object.fromEntries(artPrefsRows.map(p => [p.oracleId, p.cardArt]));
+
+    const byBoard = (deckCards: typeof deck.branches[0]['decklist']['deckCards'], board: string) =>
+      deckCards
+        .filter(dc => dc.board === board)
+        .flatMap(dc => Array(dc.count).fill({ ...dc.card, defaultArt: defaultArtById.get(dc.cardId) ?? null }));
+
+    const resolvedBranches = deck.branches.map(b => ({
+      ...b,
+      decklist: {
+        mainDeck: byBoard(b.decklist.deckCards, 'MAIN'),
+        sideBoard: byBoard(b.decklist.deckCards, 'SIDE'),
+        commander: byBoard(b.decklist.deckCards, 'COMMANDER'),
+        considering: byBoard(b.decklist.deckCards, 'CONSIDERING'),
+      },
+      workingTree: b.workingTree ? {
+        lastModifiedAt: b.workingTree.lastModifiedAt,
+        isCurrentSession: b.workingTree.lastSessionId === sessionId,
+        stagedChanges: b.workingTree.stagedChanges,
+      } : null,
+    }));
+
+    res.send({ ...deck, branches: resolvedBranches, allBranches, graphBranches, artPreferences });
   } catch (e: any) {
     if (e.name === "PrismaClientKnownRequestError") {
       console.log(`${e.meta?.cause} : ${id}`);
@@ -414,8 +503,13 @@ deckRouter.put("/:id/:branch/working-tree", requireAuth, async (req: Request, re
         });
         if (changes.length > 0) {
           await tx.stagedChange.createMany({
-            data: changes.map(({ action, board, cardId, count }) => ({
-              action, board, count, cardId, workingTreeId: existingTree.id,
+            data: changes.map(c => ({
+              action: c.action,
+              board: c.action !== 'SET_ART' ? (c as any).board : null,
+              count: c.action !== 'SET_ART' ? (c as any).count : 1,
+              cardId: c.cardId,
+              artId: c.action === 'SET_ART' ? (c as any).artId : null,
+              workingTreeId: existingTree.id,
             })),
           });
         }
@@ -426,8 +520,13 @@ deckRouter.put("/:id/:branch/working-tree", requireAuth, async (req: Request, re
           data: { branchId: branch, lastSessionId: sessionId },
         });
         await tx.stagedChange.createMany({
-          data: changes.map(({ action, board, cardId, count }) => ({
-            action, board, count, cardId, workingTreeId: newTree.id,
+          data: changes.map(c => ({
+            action: c.action,
+            board: c.action !== 'SET_ART' ? (c as any).board : null,
+            count: c.action !== 'SET_ART' ? (c as any).count : 1,
+            cardId: c.cardId,
+            artId: c.action === 'SET_ART' ? (c as any).artId : null,
+            workingTreeId: newTree.id,
           })),
         });
       });
@@ -454,7 +553,10 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
         workingTree: {
           include: {
             stagedChanges: {
-              include: { card: { select: { id: true, name: true, artCropUrl: true } } },
+              include: {
+                card: { select: { id: true, name: true, oracleId: true } },
+                cardArt: { select: { id: true, artCropUrl: true, faces: { select: { name: true, artCropUrl: true } } } },
+              },
             },
           },
         },
@@ -483,15 +585,19 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
     const decklistId = foundBranch.decklistId;
     const newCommitId = randomUUID();
 
-    // Compute final deck state by applying staged changes to current DeckCard table
+    // Separate card changes from art changes
+    const cardStagedChanges = workingTree.stagedChanges.filter(sc => sc.action !== 'SET_ART');
+    const artStagedChanges  = workingTree.stagedChanges.filter(sc => sc.action === 'SET_ART');
+
+    // Compute final deck state by applying card changes to current DeckCard table
     const boardCards: Record<string, Map<string, number>> = {
       MAIN: new Map(), SIDE: new Map(), COMMANDER: new Map(), CONSIDERING: new Map(),
     };
     for (const dc of foundBranch.decklist.deckCards) {
       boardCards[dc.board].set(dc.cardId, dc.count);
     }
-    for (const sc of workingTree.stagedChanges) {
-      const board = boardCards[sc.board];
+    for (const sc of cardStagedChanges) {
+      const board = boardCards[sc.board!];
       const current = board.get(sc.cardId) ?? 0;
       if (sc.action === 'ADD') {
         board.set(sc.cardId, current + sc.count);
@@ -504,7 +610,7 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
 
     // TODO: Replace generateCommitDescription with an LLM-generated description for more natural commit messages
     const description = generateCommitDescription(
-      workingTree.stagedChanges.map(sc => ({
+      cardStagedChanges.map(sc => ({
         action: sc.action as 'ADD' | 'REMOVE',
         board: sc.board as 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING',
         count: sc.count,
@@ -514,12 +620,22 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
 
     const shouldSnapshot = (foundBranch._count.commits + 1) % 5 === 0;
 
-    // Auto-portrait: set if deck has none
+    // Auto-portrait: use selected art (from SET_ART staged change) or default CardArt (same id as card)
     let autoPortrait: string | null = null;
     if (!foundBranch.deck.portraitUrl) {
-      const cmdCard = workingTree.stagedChanges.find(sc => sc.board === 'COMMANDER' && sc.action === 'ADD' && sc.card.artCropUrl);
-      const anyCard = workingTree.stagedChanges.find(sc => sc.action === 'ADD' && sc.card.artCropUrl);
-      autoPortrait = cmdCard?.card.artCropUrl ?? anyCard?.card.artCropUrl ?? null;
+      const artCropOf = (sc: typeof workingTree.stagedChanges[0]) =>
+        sc.cardArt?.artCropUrl ?? sc.cardArt?.faces?.[0]?.artCropUrl ?? null;
+      const cmdAdd = cardStagedChanges.find(sc => sc.board === 'COMMANDER' && sc.action === 'ADD');
+      const anyAdd = cardStagedChanges.find(sc => sc.action === 'ADD');
+      // Prefer SET_ART crop for commander, then any ADD card's art
+      const cmdArtChange = cmdAdd ? artStagedChanges.find(sc => sc.cardId === cmdAdd.cardId) : null;
+      const cmdCrop = cmdArtChange ? artCropOf(cmdArtChange) : (cmdAdd ? artCropOf(cmdAdd) : null);
+      if (cmdCrop) {
+        autoPortrait = cmdCrop;
+      } else if (anyAdd) {
+        const anyArtChange = artStagedChanges.find(sc => sc.cardId === anyAdd.cardId);
+        autoPortrait = anyArtChange ? artCropOf(anyArtChange) : artCropOf(anyAdd);
+      }
     }
 
     const snapshotDecklistId = shouldSnapshot ? randomUUID() : null;
@@ -543,15 +659,38 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
           description,
           branch: { connect: { id: branch } },
           changes: {
-            create: workingTree.stagedChanges.map(sc => ({
-              action: sc.action,
-              board: sc.board,
-              count: sc.count,
-              card: { connect: { id: sc.cardId } },
-            })),
+            create: [
+              ...cardStagedChanges.map(sc => ({
+                action: sc.action,
+                board: sc.board,
+                count: sc.count,
+                card: { connect: { id: sc.cardId } },
+              })),
+              ...artStagedChanges.map(sc => ({
+                action: sc.action,
+                board: null,
+                count: 1,
+                card: { connect: { id: sc.cardId } },
+                cardArt: { connect: { id: sc.artId! } },
+              })),
+            ],
           },
         },
       });
+
+      // Upsert DecklistArtPreference for each SET_ART change
+      if (artStagedChanges.length > 0) {
+        const artPrefUpdates = artStagedChanges
+          .filter(sc => sc.card.oracleId && sc.artId)
+          .map(sc => ({
+            q: { decklistId, oracleId: sc.card.oracleId },
+            u: { $set: { decklistId, oracleId: sc.card.oracleId, cardArtId: sc.artId } },
+            upsert: true,
+          }));
+        if (artPrefUpdates.length > 0) {
+          await tx.$runCommandRaw({ update: 'DecklistArtPreference', updates: artPrefUpdates, ordered: false });
+        }
+      }
 
       // Create snapshot every 5th commit
       if (snapshotDecklistId && snapshotId) {
