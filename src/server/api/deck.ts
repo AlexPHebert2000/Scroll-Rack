@@ -4,7 +4,8 @@ import prisma from '../db.js';
 import { randomUUID } from "crypto";
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { generateCommitDescription } from '../helper/commitDescription.js';
+import { generateCommitDescription, type DescriptionChange } from '../helper/commitDescription.js';
+import { describeCommit } from '../helper/describeCommit.js';
 
 const deckRouter = Router();
 
@@ -608,15 +609,13 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
       }
     }
 
-    // TODO: Replace generateCommitDescription with an LLM-generated description for more natural commit messages
-    const description = generateCommitDescription(
-      cardStagedChanges.map(sc => ({
-        action: sc.action as 'ADD' | 'REMOVE',
-        board: sc.board as 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING',
-        count: sc.count,
-        card: { name: sc.card.name },
-      }))
-    );
+    const descChanges: DescriptionChange[] = cardStagedChanges.map(sc => ({
+      action: sc.action as 'ADD' | 'REMOVE',
+      board: sc.board as 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING',
+      count: sc.count,
+      card: { name: sc.card.name },
+    }));
+    const description = await describeCommit(descChanges);
 
     const shouldSnapshot = (foundBranch._count.commits + 1) % 5 === 0;
 
@@ -1123,6 +1122,29 @@ deckRouter.delete("/:id/:branch", requireAuth, async (req: Request, res: Respons
   } catch (e: any) {
     console.log(`Failed to delete branch : ${e.message}`);
     res.status(500).json({ error: "Failed to delete branch" });
+  }
+});
+
+// ── Suggest commit description ────────────────────────────────────────────────
+
+const suggestDescriptionSchema = z.object({
+  changes: z.array(z.object({
+    action: z.enum(['ADD', 'REMOVE']),
+    board: z.enum(['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING']),
+    count: z.number().int().positive(),
+    card: z.object({ name: z.string() }),
+  })),
+});
+
+deckRouter.post("/:id/:branch/suggest-description", requireAuth, async (req: Request, res: Response) => {
+  const parsed = suggestDescriptionSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid request' }); return; }
+
+  try {
+    const description = await describeCommit(parsed.data.changes);
+    res.json({ description });
+  } catch {
+    res.status(500).json({ error: 'Failed to generate description' });
   }
 });
 

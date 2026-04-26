@@ -744,6 +744,30 @@ const Decklist = () => {
     },
   });
 
+  const suggestDescMutation = useMutation({
+    mutationFn: (changes: { action: string; board: string; count: number; card: { name: string } }[]) =>
+      axios.post<{ description: string }>(`/api/deck/${id}/${branchId}/suggest-description`, { changes }).then(r => r.data),
+    onSuccess: (data) => {
+      setCommitDesc(prev => prev || data.description);
+    },
+  });
+
+  const openCommitDialog = () => {
+    setCommitDesc('');
+    setCommitOpen(true);
+    const changes = [...pendingChanges.entries()].flatMap(([cardId, boardDeltas]) =>
+      (Object.entries(boardDeltas) as [BoardKey, number][])
+        .filter(([, delta]) => delta !== 0)
+        .map(([board, delta]) => ({
+          action: delta > 0 ? 'ADD' : 'REMOVE',
+          board,
+          count: Math.abs(delta),
+          card: { name: getCardName(cardId) },
+        }))
+    );
+    if (changes.length > 0) suggestDescMutation.mutate(changes);
+  };
+
   const handleCommit = () => {
     const changes: { action: string; board: string; cardId: string; count: number }[] = [];
 
@@ -946,7 +970,7 @@ const Decklist = () => {
                   >
                     {quickCommitMutation.isPending ? 'Committing…' : 'Quick Commit'}
                   </Button>
-                  <Button variant="contained" size="small" onClick={() => setCommitOpen(true)} sx={{ fontSize: 11 }}>
+                  <Button variant="contained" size="small" onClick={openCommitDialog} sx={{ fontSize: 11 }}>
                     Commit
                   </Button>
                 </>
@@ -1332,6 +1356,7 @@ const Decklist = () => {
             value={commitDesc}
             onChange={e => setCommitDesc(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && commitDesc.trim() && handleCommit()}
+            placeholder={suggestDescMutation.isPending ? 'Generating description…' : undefined}
             sx={{ mt: 1 }}
           />
         </DialogContent>

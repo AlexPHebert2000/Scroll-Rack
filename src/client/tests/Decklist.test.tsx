@@ -145,7 +145,8 @@ describe('Decklist — commit flow', () => {
 
   it('submitting fires POST with correct payload, then clears state and closes dialog', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
-    mockedAxios.post.mockResolvedValueOnce({ data: {} });
+    mockedAxios.post.mockResolvedValueOnce({ data: { description: '' } }); // suggest-description (empty so it doesn't interfere with user input)
+    mockedAxios.post.mockResolvedValueOnce({ data: {} }); // commit
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
 
