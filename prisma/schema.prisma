@@ -10,17 +10,18 @@ datasource db {
 
 // Scryfall cards — id is the Scryfall UUID (not an ObjectId)
 model Card {
-  id         String     @id @map("_id")
-  name       String
-  imageUrl   String?
-  artCropUrl String?
-  typeLine   String?
-  cmc        Float?
-  oracleText String?
-  layout     String?
-  faces      CardFace[]
-  changes    Change[]
-  deckCards  DeckCard[]
+  id            String        @id @map("_id")
+  name          String
+  imageUrl      String?
+  artCropUrl    String?
+  typeLine      String?
+  cmc           Float?
+  oracleText    String?
+  layout        String?
+  faces         CardFace[]
+  changes       Change[]
+  deckCards     DeckCard[]
+  stagedChanges StagedChange[]
 }
 
 model CardFace {
@@ -52,12 +53,13 @@ model User {
 }
 
 model Session {
-  id        String   @id @map("_id")
-  userEmail String
-  createdAt DateTime @default(now())
-  lastSeen  DateTime @default(now())
-  expires   DateTime
-  user      User     @relation(fields: [userEmail], references: [email])
+  id           String        @id @map("_id")
+  userEmail    String
+  createdAt    DateTime      @default(now())
+  lastSeen     DateTime      @default(now())
+  expires      DateTime
+  user         User          @relation(fields: [userEmail], references: [email])
+  workingTrees WorkingTree[]
 }
 
 model Deck {
@@ -92,15 +94,16 @@ model DeckCard {
 }
 
 model Branch {
-  id           String   @id @map("_id")
-  name         String   @default("main")
+  id           String       @id @map("_id")
+  name         String       @default("main")
   deckId       String
-  deck         Deck     @relation(fields: [deckId], references: [id])
-  decklistId   String   @unique
-  decklist     Decklist @relation(fields: [decklistId], references: [id])
+  deck         Deck         @relation(fields: [deckId], references: [id])
+  decklistId   String       @unique
+  decklist     Decklist     @relation(fields: [decklistId], references: [id])
   commits      Commit[]
-  headCommitId String?  @unique
-  headCommit   Commit?  @relation(name: "HEAD", fields: [headCommitId], references: [id])
+  headCommitId String?      @unique
+  headCommit   Commit?      @relation(name: "HEAD", fields: [headCommitId], references: [id])
+  workingTree  WorkingTree?
 }
 
 model Commit {
@@ -134,6 +137,29 @@ model Change {
   card     Card   @relation(fields: [cardId], references: [id])
 
   @@unique([action, board, cardId, commitId])
+}
+
+model WorkingTree {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  branchId       String        @unique
+  lastModifiedAt DateTime      @updatedAt
+  lastSessionId  String?
+  branch         Branch        @relation(fields: [branchId], references: [id])
+  session        Session?      @relation(fields: [lastSessionId], references: [id])
+  stagedChanges  StagedChange[]
+}
+
+model StagedChange {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  action        Action
+  board         Board
+  cardId        String
+  count         Int         @default(1)
+  workingTreeId String      @db.ObjectId
+  workingTree   WorkingTree @relation(fields: [workingTreeId], references: [id], onDelete: Cascade)
+  card          Card        @relation(fields: [cardId], references: [id])
+
+  @@unique([board, cardId, workingTreeId])
 }
 
 enum Action {

@@ -5,6 +5,7 @@ declare global {
   namespace Express {
     interface Request {
       userEmail: string;
+      sessionId: string;
     }
   }
 }
@@ -20,6 +21,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     });
     if (session.expires < new Date()) { res.sendStatus(401); return; }
     req.userEmail = session.userEmail;
+    req.sessionId = sessionId;
     next();
   } catch {
     res.sendStatus(401);
