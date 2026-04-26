@@ -9,6 +9,7 @@ const scryfallRouter = Router();
 scryfallRouter.get("/search", async (req: Request, res: Response) => {
   try {
     const qString = req.query.qString as string | undefined;
+    console.log(qString)
     if (!qString) {
       res.status(400).json({ error: 'qString query parameter is required' });
       return;
@@ -34,17 +35,20 @@ scryfallRouter.get("/search", async (req: Request, res: Response) => {
     );
 
     // Enrich default art from live Scryfall response if not yet in DB
-    const enriched = cards.map(card => {
-      const sf = sfById.get(card.id);
-      let defaultArt = cardArtMap.get(card.id) ?? null;
+    const sfOrder = new Map<string, number>(data.data.map((c: any, i: number) => [c.id, i]));
+    const enriched = cards
+      .map(card => {
+        const sf = sfById.get(card.id);
+        let defaultArt = cardArtMap.get(card.id) ?? null;
 
-      if (defaultArt && !defaultArt.artCropUrl) {
-        const liveCrop = sf?.image_uris?.art_crop ?? sf?.card_faces?.[0]?.image_uris?.art_crop ?? null;
-        if (liveCrop) defaultArt = { ...defaultArt, artCropUrl: liveCrop };
-      }
+        if (defaultArt && !defaultArt.artCropUrl) {
+          const liveCrop = sf?.image_uris?.art_crop ?? sf?.card_faces?.[0]?.image_uris?.art_crop ?? null;
+          if (liveCrop) defaultArt = { ...defaultArt, artCropUrl: liveCrop };
+        }
 
-      return { ...card, defaultArt };
-    });
+        return { ...card, defaultArt };
+      })
+      .sort((a, b) => (sfOrder.get(a.id) ?? 0) - (sfOrder.get(b.id) ?? 0));
 
     res.json(enriched);
   } catch (error: any) {

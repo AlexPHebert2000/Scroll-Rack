@@ -390,3 +390,82 @@ describe('Decklist — art selection', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Discard changes
+// ---------------------------------------------------------------------------
+
+describe('Decklist — discard changes', () => {
+  beforeEach(() => {
+    mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
+  });
+
+  it('"Discard" button is hidden when there are no pending changes', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^discard$/i })).not.toBeInTheDocument();
+  });
+
+  it('"Discard" button appears after staging a change', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    expect(screen.getByRole('button', { name: /^discard$/i })).toBeInTheDocument();
+  });
+
+  it('clicking "Discard" shows inline confirm buttons', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    expect(screen.getByRole('button', { name: /confirm discard/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^cancel$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^discard$/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking "Cancel" in the confirm state restores the Discard button', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(screen.getByRole('button', { name: /^discard$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /confirm discard/i })).not.toBeInTheDocument();
+  });
+
+  it('"Confirm discard" fires PUT /working-tree with empty changes', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    mockedAxios.put.mockResolvedValue({ data: {} });
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /confirm discard/i }));
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      '/api/deck/deck-1/branch-1/working-tree',
+      { changes: [] }
+    );
+  });
+
+  it('after a successful discard the pending count and Discard button disappear', async () => {
+    mockedAxios.get.mockResolvedValue(deckWith([card1]));
+    mockedAxios.put.mockResolvedValue({ data: {} });
+    renderDecklist();
+    await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /remove 1/i }));
+    await waitFor(() => expect(screen.getByText('1 uncommitted change')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /confirm discard/i }));
+    await waitFor(() => expect(screen.queryByText(/uncommitted change/i)).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^discard$/i })).not.toBeInTheDocument();
+  });
+});

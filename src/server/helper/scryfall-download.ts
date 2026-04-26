@@ -7,6 +7,7 @@ const CONCURRENCY = 4;
 type SlimCard = {
   id: string; name: string; oracleId: string | null;
   typeLine: string | null; cmc: number | null; manaCost: string | null;
+  colorIdentity: string[];
   oracleText: string | null; layout: string | null;
 };
 type SlimFace = {
@@ -83,6 +84,7 @@ export default async () => {
       typeLine: card.type_line ?? null,
       cmc: card.cmc ?? null,
       manaCost: card.mana_cost ?? card.card_faces?.[0]?.mana_cost ?? null,
+      colorIdentity: card.color_identity ?? [],
       oracleText: card.oracle_text ?? null,
       layout: card.layout ?? null,
     } satisfies SlimCard;

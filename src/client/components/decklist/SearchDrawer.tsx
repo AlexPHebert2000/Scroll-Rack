@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Box from '@mui/material/Box';
 import { useQuery } from '@tanstack/react-query';
@@ -7,11 +7,13 @@ import { SR } from '../../theme';
 import type { Card } from '../CardImage';
 import { cardDisplayName } from '../CardImage';
 import type { BoardKey } from './CardListView';
+import ManaSymbols from './ManaSymbols';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   currentCards: Card[];
+  commanderCards: Card[];
   pendingChanges: Map<string, Partial<Record<BoardKey, number>>>;
   onAdd: (card: Card) => void;
   onRemove: (id: string) => void;
@@ -22,9 +24,13 @@ const PREVIEW_W = 220;
 const PREVIEW_H = Math.round(PREVIEW_W * (1040 / 745));
 const PREVIEW_DELAY = 500;
 
-const SearchDrawer = ({ open, onClose, currentCards, pendingChanges, onAdd, onRemove, onUndo }: Props) => {
+const WUBRG = ['W', 'U', 'B', 'R', 'G'];
+
+const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChanges, onAdd, onRemove, onUndo }: Props) => {
   const [query, setQuery] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'name' | 'cmc' | 'edhrec' | 'released'>('edhrec');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -54,10 +60,35 @@ const SearchDrawer = ({ open, onClose, currentCards, pendingChanges, onAdd, onRe
     setPreview(null);
   };
 
+  // Build color identity filter from all commander cards
+  const colorIdentityFilter = useMemo(() => {
+    if (commanderCards.length === 0) return '';
+    const colors = new Set<string>();
+    commanderCards.forEach(c => (c.colorIdentity ?? []).forEach(col => colors.add(col)));
+    const sorted = WUBRG.filter(c => colors.has(c));
+    // colorless commander: identity is empty → restrict to colorless only
+    return `id:${sorted.join('') || 'c'}`;
+  }, [commanderCards]);
+
+  const colorIdentityDisplay = useMemo(() => {
+    if (!colorIdentityFilter) return '';
+    const match = colorIdentityFilter.match(/id:(.+)/);
+    if (!match) return '';
+    const colors = match[1] === 'c' ? [] : match[1].split('');
+    return colors.map(c => `{${c}}`).join('');
+  }, [colorIdentityFilter]);
+
+  const effectiveQuery = [
+    activeQuery,
+    colorIdentityFilter,
+    `order:${sortOrder}`,
+    `dir:${sortDir}`,
+  ].filter(Boolean).join(' ');
+
   const searchQ = useQuery<Card[]>({
-    queryKey: ['drawerSearch', activeQuery],
+    queryKey: ['drawerSearch', activeQuery, colorIdentityFilter, sortOrder, sortDir],
     queryFn: () =>
-      axios.get<Card[]>(`/api/scryfall/search?qString=${encodeURIComponent(activeQuery)}`).then(r => r.data),
+      axios.get<Card[]>(`/api/scryfall/search?qString=${encodeURIComponent(effectiveQuery)}`).then(r => r.data),
     enabled: activeQuery.length > 0,
   });
 
@@ -132,8 +163,58 @@ const SearchDrawer = ({ open, onClose, currentCards, pendingChanges, onAdd, onRe
                 '&:focus': { borderColor: SR.accentTeal },
               }}
             />
+
+            {/* Sort + identity row */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mt: '8px' }}>
+              <Box
+                component="select"
+                value={sortOrder}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortOrder(e.target.value as typeof sortOrder)}
+                sx={{
+                  flex: 1, fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted,
+                  backgroundColor: SR.surfaceApp, border: `0.5px solid ${SR.border}`,
+                  borderRadius: '5px', padding: '4px 8px', outline: 'none',
+                  cursor: 'pointer', appearance: 'none',
+                  '&:focus': { borderColor: SR.accentTeal },
+                }}
+              >
+                <option value="edhrec">EDHREC rank</option>
+                <option value="name">Name</option>
+                <option value="cmc">CMC</option>
+                <option value="released">Release date</option>
+              </Box>
+              <Box
+                component="button"
+                onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                sx={{
+                  flexShrink: 0, width: 30, height: 26,
+                  fontFamily: SR.fontMono, fontSize: 14, lineHeight: 1,
+                  backgroundColor: SR.surfaceApp, border: `0.5px solid ${SR.border}`,
+                  borderRadius: '5px', cursor: 'pointer', color: SR.textMuted,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'border-color 80ms, color 80ms',
+                  '&:hover': { borderColor: SR.textMuted, color: SR.textPrimary },
+                }}
+              >
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </Box>
+              {colorIdentityFilter && (
+                <>
+                  <Box sx={{ width: '0.5px', alignSelf: 'stretch', backgroundColor: SR.border, mx: '4px', flexShrink: 0 }} />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                    <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, color: SR.textFaint }}>identity</Box>
+                    {colorIdentityDisplay
+                      ? <ManaSymbols cost={colorIdentityDisplay} size={12} />
+                      : <Box sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.textFaint }}>C</Box>
+                    }
+                  </Box>
+                </>
+              )}
+            </Box>
+
             {activeQuery && !searchQ.isFetching && results.length > 0 && (
-              <Box sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.textFaint, mt: '6px' }}>
+              <Box sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.textFaint, mt: '4px' }}>
                 {results.length} results
               </Box>
             )}

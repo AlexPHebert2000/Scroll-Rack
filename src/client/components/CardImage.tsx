@@ -15,7 +15,7 @@ export interface CardFace { name: string; typeLine?: string | null; cmc?: number
 export interface Card {
   id: string; name: string;
   oracleId?: string | null;
-  typeLine?: string | null; cmc?: number | null; manaCost?: string | null;
+  typeLine?: string | null; cmc?: number | null; manaCost?: string | null; colorIdentity?: string[];
   oracleText?: string | null; layout?: string | null;
   faces: CardFace[];
   defaultArt?: CardArt | null;

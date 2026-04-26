@@ -364,6 +364,7 @@ const Decklist = () => {
   const [commitDesc, setCommitDesc] = useState('');
   const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
   const [sessionConflict, setSessionConflict] = useState(false);
+  const [discardConfirm, setDiscardConfirm] = useState(false);
   const [branchDialogOpen, setBranchDialogOpen] = useState(false);
   const [branchNameInput, setBranchNameInput] = useState('');
 
@@ -394,9 +395,28 @@ const Decklist = () => {
       setPendingChanges(new Map());
       setPendingArtChanges(new Map());
       setSessionConflict(false);
+      setDiscardConfirm(false);
       queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
     },
   });
+
+  const discardMutation = useMutation({
+    mutationFn: ({ bid }: { bid: string }) =>
+      axios.put(`/api/deck/${id}/${bid}/working-tree`, { changes: [] }),
+    onSuccess: () => {
+      setPendingChanges(new Map());
+      setPendingArtChanges(new Map());
+      setSessionConflict(false);
+      setDiscardConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ['deckFetch', id] });
+    },
+  });
+
+  const handleDiscard = () => {
+    if (!branchId) return;
+    if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null; }
+    discardMutation.mutate({ bid: branchId });
+  };
 
   const isViewingHistory = Boolean(selectedCommit && selectedCommit !== headCommitId);
 
@@ -899,6 +919,25 @@ const Decklist = () => {
               </Box>
               {hasPending && (
                 <>
+                  {discardConfirm ? (
+                    <>
+                      <Button
+                        variant="outlined" size="small" color="error"
+                        onClick={handleDiscard}
+                        disabled={discardMutation.isPending}
+                        sx={{ fontSize: 11 }}
+                      >
+                        {discardMutation.isPending ? 'Discarding…' : 'Confirm discard'}
+                      </Button>
+                      <Button size="small" variant="outlined" onClick={() => setDiscardConfirm(false)} sx={{ fontSize: 11 }}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="small" variant="outlined" onClick={() => setDiscardConfirm(true)} sx={{ fontSize: 11 }}>
+                      Discard
+                    </Button>
+                  )}
                   <Button
                     variant="outlined" size="small"
                     onClick={handleQuickCommit}
@@ -1077,6 +1116,7 @@ const Decklist = () => {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         currentCards={[...mainCards, ...commanderCards, ...sideCards, ...consideringCards]}
+        commanderCards={[...commanderCards, ...addedToCommander]}
         pendingChanges={pendingChanges}
         onAdd={stageAdd}
         onRemove={(id) => stageRemove(id, 'MAIN')}
