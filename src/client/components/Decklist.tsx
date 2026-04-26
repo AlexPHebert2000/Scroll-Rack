@@ -8,9 +8,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import Divider from '@mui/material/Divider';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
@@ -19,6 +16,7 @@ import CommitGraph from './decklist/CommitGraph';
 import type { Commit } from './decklist/CommitGraph';
 import ArtBanner from './decklist/ArtBanner';
 import CardListView from './decklist/CardListView';
+import CardMenu from './decklist/CardMenu';
 import type { BoardKey, BoardPack } from './decklist/CardListView';
 import { BOARD_LABELS, buildTypeGroups } from './decklist/CardListView';
 import type { CountedCard, GroupDef } from './decklist/CardListView';
@@ -123,7 +121,7 @@ const Tag = ({ children, variant = 'neutral' }: { children: React.ReactNode; var
 
 const ImageCardItem = ({
   card, art, effective, committed, board,
-  onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
+  onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onSelectArt, onMove,
 }: {
   card: Card;
   art?: CardArt | null;
@@ -135,10 +133,13 @@ const ImageCardItem = ({
   onRemoveAll: () => void;
   onOpenSetCount: () => void;
   onSetPortrait?: () => void;
+  onSelectArt?: () => void;
   onMove: (toBoard: BoardKey) => void;
 }) => {
   const [hovered, setHovered] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [faceIdx, setFaceIdx] = useState(0);
+  const isMultiFace = (card.faces?.length ?? 0) >= 2;
 
   const pendingAdded = effective > committed;
   const pendingRemoved = effective < committed && committed > 0;
@@ -152,7 +153,11 @@ const ImageCardItem = ({
       onMouseLeave={() => { if (!menuAnchor) setHovered(false); }}
       sx={{ position: 'relative', borderRadius: '8px' }}
     >
-      <CardImage card={card} art={art} dimmed={pendingAdded && committed === 0} />
+      <CardImage
+        card={card} art={art} dimmed={pendingAdded && committed === 0}
+        faceIdx={isMultiFace ? faceIdx : undefined}
+        onFlipFace={isMultiFace ? () => setFaceIdx(i => i === 0 ? 1 : 0) : undefined}
+      />
 
       {pendingRemoved && (
         <Box sx={{
@@ -193,27 +198,39 @@ const ImageCardItem = ({
         )}
       </Box>
 
-      <Menu
+      {isMultiFace && (
+        <Box
+          component="button"
+          onClick={() => setFaceIdx(i => i === 0 ? 1 : 0)}
+          title={faceIdx === 0 ? 'Show back face' : 'Show front face'}
+          sx={{
+            position: 'absolute', bottom: 8, left: 8, zIndex: 2,
+            background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)',
+            border: '0.5px solid rgba(255,255,255,0.13)', borderRadius: '999px',
+            padding: '2px 9px', cursor: 'pointer',
+            fontFamily: SR.fontMono, fontSize: 14, lineHeight: 1.4,
+            color: 'rgba(255,255,255,0.7)',
+            '&:hover': { background: 'rgba(0,0,0,0.75)', color: 'rgba(255,255,255,0.95)' },
+          }}
+        >
+          ↺
+        </Box>
+      )}
+
+      <CardMenu
         anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
+        board={board}
+        effectiveCount={effective}
+        hasArtOverride={Boolean(onSelectArt && art && art.id !== (card.defaultArt?.id ?? ''))}
         onClose={closeMenu}
-        PaperProps={{ sx: { backgroundColor: SR.surfacePanel, border: `0.5px solid ${SR.border}`, borderRadius: 1, minWidth: 160 } }}
-      >
-        <MenuItem onClick={() => { onAddOne(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Add 1</MenuItem>
-        <MenuItem onClick={() => { onOpenSetCount(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Set count</MenuItem>
-        <MenuItem onClick={() => { onRemoveOne(); closeMenu(); }} disabled={effective <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Remove 1</MenuItem>
-        <MenuItem onClick={() => { onRemoveAll(); closeMenu(); }} disabled={effective <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.accentRed }}>Remove all</MenuItem>
-        {onSetPortrait && art?.artCropUrl && [
-          <Divider key="d" />,
-          <MenuItem key="p" onClick={() => { onSetPortrait!(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Set as portrait</MenuItem>,
-        ]}
-        <Divider sx={{ borderColor: SR.border }} />
-        {ALL_BOARDS.filter(b => b !== board).map(target => (
-          <MenuItem key={target} onClick={() => { onMove(target); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>
-            Move to {BOARD_LABELS[target]}
-          </MenuItem>
-        ))}
-      </Menu>
+        onAddOne={onAddOne}
+        onRemoveOne={onRemoveOne}
+        onRemoveAll={onRemoveAll}
+        onOpenSetCount={onOpenSetCount}
+        onSetPortrait={onSetPortrait && art?.artCropUrl ? onSetPortrait : undefined}
+        onSelectArt={onSelectArt}
+        onMove={onMove}
+      />
     </Box>
   );
 };
@@ -223,7 +240,7 @@ const ImageCardItem = ({
 
 const ImagesView = ({
   activeBoard, main, commander, side, considering,
-  pendingChanges, resolveArt, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onMove,
+  pendingChanges, resolveArt, onAddOne, onRemoveOne, onRemoveAll, onOpenSetCount, onSetPortrait, onSelectArt, onMove,
 }: {
   activeBoard: 'main' | 'side' | 'considering';
   main: BoardPack;
@@ -237,6 +254,7 @@ const ImagesView = ({
   onRemoveAll: (id: string, board: BoardKey) => void;
   onOpenSetCount: (id: string, board: BoardKey) => void;
   onSetPortrait: (url: string) => void;
+  onSelectArt?: (card: Card) => void;
   onMove: (card: Card, fromBoard: BoardKey, toBoard: BoardKey) => void;
 }) => {
   type DedupedItem = { card: Card; committed: number; board: BoardKey; effective: number; resolvedArt: CardArt | null };
@@ -253,7 +271,7 @@ const ImagesView = ({
       <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: SR.textFaint, mb: '10px' }}>
         {title}
       </Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(186px, 1fr))', gap: '12px' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
         {items.map(({ card, committed, effective, resolvedArt }) => (
           <ImageCardItem
             key={card.id}
@@ -267,6 +285,7 @@ const ImagesView = ({
             onRemoveAll={() => onRemoveAll(card.id, board)}
             onOpenSetCount={() => onOpenSetCount(card.id, board)}
             onSetPortrait={resolvedArt?.artCropUrl ? () => onSetPortrait(resolvedArt!.artCropUrl!) : undefined}
+            onSelectArt={onSelectArt ? () => onSelectArt(card) : undefined}
             onMove={toBoard => onMove(card, board, toBoard)}
           />
         ))}
@@ -1041,6 +1060,7 @@ const Decklist = () => {
               onRemoveAll={stageRemoveAll}
               onOpenSetCount={openSetCount}
               onSetPortrait={handleSetPortrait}
+              onSelectArt={isViewingHistory ? undefined : setArtPickerCard}
               onMove={stageMove}
             />
           )}

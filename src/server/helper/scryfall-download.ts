@@ -9,7 +9,7 @@ type SlimCard = {
   typeLine: string | null; cmc: number | null; oracleText: string | null; layout: string | null;
 };
 type SlimFace = {
-  cardId: string; name: string;
+  cardId: string; name: string; order: number;
   typeLine: string | null; cmc: number | null; oracleText: string | null; layout: string | null;
 };
 type SlimArt = {
@@ -18,7 +18,7 @@ type SlimArt = {
   set: string | null; setName: string | null; artist: string | null;
 };
 type SlimArtFace = {
-  cardArtId: string; name: string;
+  cardArtId: string; name: string; order: number;
   imageUrl: string | null; artCropUrl: string | null;
 };
 
@@ -86,10 +86,12 @@ export default async () => {
     } satisfies SlimCard;
     cardDocs.push({ _id: id, ...rest });
 
-    for (const face of card.card_faces ?? []) {
+    for (let fi = 0; fi < (card.card_faces ?? []).length; fi++) {
+      const face = card.card_faces[fi];
       faceDocs.push({
         cardId: card.id,
         name: face.name,
+        order: fi,
         typeLine: face.type_line ?? null,
         cmc: face.cmc ?? null,
         oracleText: face.oracle_text ?? null,
@@ -115,10 +117,12 @@ export default async () => {
     } satisfies SlimArt;
     artDocs.push({ _id: artId, ...artRest });
 
-    for (const face of card.card_faces ?? []) {
+    for (let fi = 0; fi < (card.card_faces ?? []).length; fi++) {
+      const face = card.card_faces[fi];
       artFaceDocs.push({
         cardArtId: card.id,
         name: face.name,
+        order: fi,
         imageUrl: face.image_uris?.normal ?? null,
         artCropUrl: face.image_uris?.art_crop ?? null,
       } satisfies SlimArtFace);
@@ -170,10 +174,12 @@ export async function scryfallArtsDownload(): Promise<void> {
     } satisfies SlimArt;
     artDocs.push({ _id: id, ...rest });
 
-    for (const face of card.card_faces ?? []) {
+    for (let fi = 0; fi < (card.card_faces ?? []).length; fi++) {
+      const face = card.card_faces[fi];
       artFaceDocs.push({
         cardArtId: card.id,
         name: face.name,
+        order: fi,
         imageUrl: face.image_uris?.normal ?? null,
         artCropUrl: face.image_uris?.art_crop ?? null,
       } satisfies SlimArtFace);

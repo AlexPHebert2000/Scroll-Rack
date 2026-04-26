@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import Box from '@mui/material/Box';
-import Divider from '@mui/material/Divider';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import { SR } from '../../theme';
 import type { Card, CardArt } from '../CardImage';
 import { cardDisplayName } from '../CardImage';
+import CardMenu from './CardMenu';
 
 export type BoardKey = 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING';
 
@@ -16,7 +14,6 @@ export const BOARD_LABELS: Record<BoardKey, string> = {
   CONSIDERING: 'Considering',
 };
 
-const ALL_BOARDS: BoardKey[] = ['MAIN', 'SIDE', 'COMMANDER', 'CONSIDERING'];
 
 export const TYPE_ORDER = ['Planeswalker', 'Creature', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Battle', 'Land'];
 
@@ -131,23 +128,6 @@ const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, i
               <PortraitIcon />
             </Box>
           )}
-          {onSelectArt && (
-            <Box
-              component="button"
-              onClick={onSelectArt}
-              title={hasArtOverride ? 'Change art (custom)' : 'Select art variant'}
-              sx={{
-                background: 'none',
-                border: `0.5px solid ${hasArtOverride ? SR.accentTealLight : SR.border}`,
-                borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
-                color: hasArtOverride ? SR.accentTealLight : SR.textFaint,
-                display: 'flex', alignItems: 'center',
-                '&:hover': { borderColor: SR.textMuted, color: SR.textMuted },
-              }}
-            >
-              <ArtIcon />
-            </Box>
-          )}
           <Box
             component="button"
             onClick={(e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget)}
@@ -170,23 +150,19 @@ const CardRow = ({ card, effectiveCount, committed, italic, board, isMoveHere, i
         )
       )}
 
-      <Menu
+      <CardMenu
         anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
+        board={board}
+        effectiveCount={effectiveCount}
+        hasArtOverride={hasArtOverride}
         onClose={closeMenu}
-        PaperProps={{ sx: { backgroundColor: SR.surfacePanel, border: `0.5px solid ${SR.border}`, borderRadius: 1, minWidth: 160 } }}
-      >
-        <MenuItem onClick={() => { onAddOne(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Add 1</MenuItem>
-        <MenuItem onClick={() => { onOpenSetCount(); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Set count</MenuItem>
-        <MenuItem onClick={() => { onRemoveOne(); closeMenu(); }} disabled={effectiveCount <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>Remove 1</MenuItem>
-        <MenuItem onClick={() => { onRemoveAll(); closeMenu(); }} disabled={effectiveCount <= 0} sx={{ fontFamily: SR.fontUi, fontSize: 12, color: SR.accentRed }}>Remove all</MenuItem>
-        <Divider sx={{ borderColor: SR.border, my: '4px' }} />
-        {ALL_BOARDS.filter(b => b !== board).map(target => (
-          <MenuItem key={target} onClick={() => { onMove(target); closeMenu(); }} sx={{ fontFamily: SR.fontUi, fontSize: 12 }}>
-            Move to {BOARD_LABELS[target]}
-          </MenuItem>
-        ))}
-      </Menu>
+        onAddOne={onAddOne}
+        onRemoveOne={onRemoveOne}
+        onRemoveAll={onRemoveAll}
+        onOpenSetCount={onOpenSetCount}
+        onSelectArt={onSelectArt}
+        onMove={onMove}
+      />
     </Box>
   );
 };

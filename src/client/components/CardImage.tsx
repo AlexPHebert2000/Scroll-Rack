@@ -30,6 +30,8 @@ export interface CardImageProps {
   action?: React.ReactNode;
   dimmed?: boolean;
   addedHighlight?: boolean;
+  faceIdx?: number;
+  onFlipFace?: () => void;
 }
 
 const circularSx = {
@@ -38,8 +40,9 @@ const circularSx = {
   padding: 0,
 };
 
-const CardImage = ({ card, art, action, dimmed, addedHighlight }: CardImageProps) => {
-  const [faceIdx, setFaceIdx] = useState(0);
+const CardImage = ({ card, art, action, dimmed, addedHighlight, faceIdx: externalFaceIdx, onFlipFace }: CardImageProps) => {
+  const [internalFaceIdx, setInternalFaceIdx] = useState(0);
+  const faceIdx = externalFaceIdx !== undefined ? externalFaceIdx : internalFaceIdx;
   const resolvedArt = art ?? card.defaultArt ?? null;
   const isMultiFace = (card.faces?.length ?? 0) >= 2;
 
@@ -88,11 +91,11 @@ const CardImage = ({ card, art, action, dimmed, addedHighlight }: CardImageProps
         </Box>
       )}
 
-      {isMultiFace && (
+      {isMultiFace && externalFaceIdx === undefined && (
         <IconButton
           className="card-overlay"
           size="small"
-          onClick={() => setFaceIdx((i) => (i === 0 ? 1 : 0))}
+          onClick={() => setInternalFaceIdx((i) => (i === 0 ? 1 : 0))}
           title={faceIdx === 0 ? "Show back face" : "Show front face"}
           sx={{
             ...circularSx,

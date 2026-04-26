@@ -51,7 +51,7 @@ const CommitGraph = ({
 
   return (
     <Box sx={{
-      width: 252, flexShrink: 0,
+      width: 325, flexShrink: 0,
       backgroundColor: GRAPH_BG,
       borderRight: '0.5px solid #2C333D',
       display: 'flex', flexDirection: 'column', overflow: 'hidden',

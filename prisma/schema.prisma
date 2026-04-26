@@ -34,6 +34,7 @@ model CardFace {
   cmc        Float?
   oracleText String?
   layout     String?
+  order      Int     @default(0)
   card       Card    @relation(fields: [cardId], references: [id])
 
   @@unique([cardId, name])
@@ -64,6 +65,7 @@ model CardArtFace {
   name       String
   imageUrl   String?
   artCropUrl String?
+  order      Int     @default(0)
   cardArt    CardArt @relation(fields: [cardArtId], references: [id])
 
   @@unique([cardArtId, name])

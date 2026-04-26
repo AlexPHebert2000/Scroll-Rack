@@ -313,15 +313,15 @@ describe('Decklist — art selection', () => {
     mockUseParams.mockReturnValue({ id: 'deck-1', branch: undefined, commit: undefined });
   });
 
-  it('art icon button is visible on hover for cards that have an oracleId', async () => {
+  it('"Select printing" menu item is present in the card menu for cards with an oracleId', async () => {
     mockedAxios.get.mockResolvedValue(deckWith([card1]));
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    hoverCardRow('Lightning Bolt');
-    expect(screen.getByRole('button', { name: /select art/i })).toBeInTheDocument();
+    await openCardMenu('Lightning Bolt');
+    expect(screen.getByRole('menuitem', { name: /select printing/i })).toBeInTheDocument();
   });
 
-  it('clicking the art icon opens the art picker dialog', async () => {
+  it('clicking "Select printing" from the card menu opens the art picker dialog', async () => {
     // arts endpoint returns empty so picker shows "No alternate art found"
     mockedAxios.get.mockImplementation((url: string) =>
       url.includes('/api/scryfall/arts')
@@ -330,8 +330,8 @@ describe('Decklist — art selection', () => {
     );
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    hoverCardRow('Lightning Bolt');
-    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /select printing/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   });
 
@@ -343,9 +343,9 @@ describe('Decklist — art selection', () => {
     );
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
-    // Open art picker
-    hoverCardRow('Lightning Bolt');
-    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    // Open art picker via card menu
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /select printing/i }));
     // Wait for art grid to load and select an art tile
     await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Alpha'));
@@ -366,9 +366,9 @@ describe('Decklist — art selection', () => {
     renderDecklist();
     await waitFor(() => expect(screen.getByText('Lightning Bolt')).toBeInTheDocument());
 
-    // Stage an art change
-    hoverCardRow('Lightning Bolt');
-    await userEvent.click(screen.getByRole('button', { name: /select art/i }));
+    // Stage an art change via the card menu
+    await openCardMenu('Lightning Bolt');
+    await userEvent.click(screen.getByRole('menuitem', { name: /select printing/i }));
     await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Alpha'));
     await waitFor(() => expect(screen.getByText('1 uncommitted change')).toBeInTheDocument());

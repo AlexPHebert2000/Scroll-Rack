@@ -271,7 +271,7 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
             changes: {
               select: {
                 action: true, board: true, cardId: true, count: true, artId: true,
-                card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
+                card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
               },
             },
           },
@@ -313,7 +313,7 @@ deckRouter.get("/:id/:branch/:commit", requireAuth, async (req: Request, res: Re
     const artById = new Map(
       (await prisma.cardArt.findMany({
         where: { id: { in: [...allArtIds] } },
-        include: { faces: true },
+        include: { faces: { orderBy: { order: 'asc' } } },
       })).map(a => [a.id, a])
     );
 
@@ -360,8 +360,8 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
                 stagedChanges: {
                   select: {
                     action: true, board: true, cardId: true, count: true, artId: true,
-                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
-                    cardArt: { select: { id: true, oracleId: true, name: true, imageUrl: true, artCropUrl: true, set: true, setName: true, artist: true, faces: { select: { name: true, imageUrl: true, artCropUrl: true } } } },
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
+                    cardArt: { select: { id: true, oracleId: true, name: true, imageUrl: true, artCropUrl: true, set: true, setName: true, artist: true, faces: { select: { name: true, imageUrl: true, artCropUrl: true }, orderBy: { order: 'asc' } } } },
                   },
                 },
               },
@@ -370,7 +370,7 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
               include: {
                 deckCards: {
                   include: {
-                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true } } } },
+                    card: { select: { id: true, name: true, oracleId: true, typeLine: true, cmc: true, oracleText: true, layout: true, faces: { select: { name: true, typeLine: true, cmc: true }, orderBy: { order: 'asc' } } } },
                   },
                 },
               },
@@ -397,12 +397,12 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
     const [defaultArts, artPrefsRows, allBranches, graphBranches] = await Promise.all([
       prisma.cardArt.findMany({
         where: { id: { in: allDeckCardIds } },
-        include: { faces: true },
+        include: { faces: { orderBy: { order: 'asc' } } },
       }),
       activeBranch
         ? prisma.decklistArtPreference.findMany({
             where: { decklistId: activeBranch.decklistId },
-            include: { cardArt: { include: { faces: true } } },
+            include: { cardArt: { include: { faces: { orderBy: { order: 'asc' } } } } },
           })
         : Promise.resolve([]),
       prisma.branch.findMany({
@@ -555,7 +555,7 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
             stagedChanges: {
               include: {
                 card: { select: { id: true, name: true, oracleId: true } },
-                cardArt: { select: { id: true, artCropUrl: true, faces: { select: { name: true, artCropUrl: true } } } },
+                cardArt: { select: { id: true, artCropUrl: true, faces: { select: { name: true, artCropUrl: true }, orderBy: { order: 'asc' } } } },
               },
             },
           },
