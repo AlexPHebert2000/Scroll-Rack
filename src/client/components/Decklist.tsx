@@ -82,15 +82,22 @@ function parseDeckText(text: string): { cards: ParsedCard[]; skipped: string[] }
   const skipped: string[] = [];
 
   for (const raw of text.split('\n')) {
-    const line = raw.trim();
+    // Strip Moxfield foil marker (*F*) before trimming
+    const line = raw.replace(/\s*\*F\*\s*$/i, '').trim();
     if (!line) continue;
     const lower = line.toLowerCase();
     if (lower === 'about' || lower.startsWith('name ') || line.startsWith('//')) continue;
     if (SECTION_HEADERS[lower] !== undefined) { currentBoard = SECTION_HEADERS[lower]; continue; }
 
-    // "4 Card Name" or "4x Card Name", optionally followed by "(SET) 123"
-    const m = line.match(/^(\d+)[xX]?\s+(.+?)(?:\s+\([^)]+\)(?:\s+\d+)?)?$/);
-    if (m) { cards.push({ name: m[2].trim(), count: parseInt(m[1], 10), board: currentBoard }); continue; }
+    // "4 Card Name" or "4x Card Name", optionally followed by "(SET) collector-number"
+    // Collector number may be alphanumeric (e.g. C17-24, 116p) as in Moxfield exports
+    const m = line.match(/^(\d+)[xX]?\s+(.+?)(?:\s+\([^)]+\)(?:\s+[\w-]+)?)?$/);
+    if (m) {
+      // Normalize Moxfield split card separator: " / " → " // "
+      const name = m[2].trim().replace(/ \/ /g, ' // ');
+      cards.push({ name, count: parseInt(m[1], 10), board: currentBoard });
+      continue;
+    }
 
     skipped.push(line);
   }
