@@ -158,9 +158,12 @@ model Commit {
   description  String
   createdAt    DateTime  @default(now())
   branchId     String
+  parentId     String?
   changes      Change[]
   headBranchOf Branch?   @relation(name: "HEAD")
   branch       Branch    @relation(fields: [branchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parent       Commit?   @relation(name: "CommitParent", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children     Commit[]  @relation(name: "CommitParent")
   snapshot     SnapShot?
 }
 

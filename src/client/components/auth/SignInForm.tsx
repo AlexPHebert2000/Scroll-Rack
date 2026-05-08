@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import Box from '@mui/material/Box';
 import { SR } from '../../theme';
@@ -7,6 +8,7 @@ import { AuthInput, SubmitBtn, Field } from './atoms';
 
 const SignInForm = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ identifier?: string; password?: string; general?: string }>({});
@@ -22,6 +24,7 @@ const SignInForm = () => {
     setLoading(true);
     try {
       await axios.post('/api/user/login', { identifier, password });
+      await queryClient.invalidateQueries({ queryKey: ['sessionLookup'] });
       navigate('/');
     } catch (err: any) {
       setErrors({ general: err.response?.data?.error ?? 'Login failed' });

@@ -1,4 +1,4 @@
-export interface GraphCommit { id: string; description: string; createdAt: string; }
+export interface GraphCommit { id: string; description: string; createdAt: string; parentId: string | null; }
 export interface GraphBranch { id: string; name: string; commits: GraphCommit[]; }
 
 export interface CommitNode {
@@ -48,49 +48,33 @@ export function buildGraph(branches: GraphBranch[]): CommitNode[] {
   const colByBranch: Record<string, number> = {};
   sorted.forEach((b, i) => { colByBranch[b.id] = i; });
 
-  // Build flat nodes with sequential parents within same branch
-  // (branches have commits sorted asc from API)
+  // Build a set of all commit IDs that belong to this branch, to detect cross-branch parent refs
+  const commitBranch: Record<string, string> = {};
+  sorted.forEach(branch => branch.commits.forEach(c => { commitBranch[c.id] = branch.id; }));
+
   const nodes: CommitNode[] = sorted.flatMap(branch =>
-    branch.commits.map((c, i) => ({
-      id: c.id,
-      shortId: c.id.slice(0, 7),
-      description: c.description,
-      createdAt: c.createdAt,
-      relativeTime: relTime(c.createdAt),
-      branchId: branch.id,
-      branchName: branch.name,
-      col: colByBranch[branch.id],
-      row: 0,
-      parentId: i > 0 ? branch.commits[i - 1].id : null,
-      branchFromId: null as string | null,
-    }))
+    branch.commits.map(c => {
+      const parentOnSameBranch = c.parentId && commitBranch[c.parentId] === branch.id ? c.parentId : null;
+      const branchFromId = c.parentId && commitBranch[c.parentId] !== branch.id ? c.parentId : null;
+      return {
+        id: c.id,
+        shortId: c.id.slice(0, 7),
+        description: c.description,
+        createdAt: c.createdAt,
+        relativeTime: relTime(c.createdAt),
+        branchId: branch.id,
+        branchName: branch.name,
+        col: colByBranch[branch.id],
+        row: 0,
+        parentId: parentOnSameBranch,
+        branchFromId,
+      };
+    })
   );
 
   // Sort by createdAt DESC so newest = row 0
   nodes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   nodes.forEach((n, i) => { n.row = i; });
-
-  const byId: Record<string, CommitNode> = {};
-  nodes.forEach(n => { byId[n.id] = n; });
-
-  // For each non-main branch's first (oldest) commit, infer branch point from main
-  const mainBranch = sorted.find(b => b.name === 'main');
-  if (mainBranch) {
-    sorted.filter(b => b.name !== 'main').forEach(branch => {
-      if (!branch.commits.length) return;
-      const first = branch.commits[0];
-      const node = byId[first.id];
-      if (!node) return;
-      const cutoff = new Date(first.createdAt).getTime();
-      let bestId: string | null = null;
-      let bestT = -Infinity;
-      mainBranch.commits.forEach(mc => {
-        const t = new Date(mc.createdAt).getTime();
-        if (t <= cutoff && t > bestT) { bestT = t; bestId = mc.id; }
-      });
-      node.branchFromId = bestId;
-    });
-  }
 
   return nodes;
 }

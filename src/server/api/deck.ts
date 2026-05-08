@@ -82,7 +82,7 @@ deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
             create: {
               id: branchId,
               decklist: { create: { id: decklistId } },
-              commits: { create: { id: commitId, description: "INIT" } },
+              commits: { create: { id: commitId, description: "INIT", parentId: null } },
             },
           },
         },
@@ -202,6 +202,7 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
             create: {
               id: seedCommitId,
               description: `Branched from "${sourceDescription}"`,
+              parentId: sourceCommitId,
               changes: {
                 create: Object.entries(boardCards).flatMap(([board, cards]) =>
                   [...cards.entries()].map(([cardId, count]) => ({
@@ -417,7 +418,7 @@ deckRouter.get("/:id{/:branch}", requireAuth, async (req: Request, res: Response
           id: true,
           name: true,
           commits: {
-            select: { id: true, description: true, createdAt: true },
+            select: { id: true, description: true, createdAt: true, parentId: true },
             orderBy: { createdAt: 'asc' },
           },
         },
@@ -656,6 +657,7 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
         data: {
           id: newCommitId,
           description,
+          parentId: foundBranch.headCommitId ?? null,
           branch: { connect: { id: branch } },
           changes: {
             create: [
@@ -847,6 +849,7 @@ deckRouter.post("/:id/:branch/import", requireAuth, async (req: Request, res: Re
             create: {
               id: newCommitId,
               description: description?.trim() || 'Import decklist',
+              parentId: foundBranch.headCommitId ?? null,
               changes: {
                 create: changes.map(({ action, board, cardId, count }) => ({
                   action, board, count, card: { connect: { id: cardId } },
@@ -917,6 +920,7 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
           select: {
             id: true,
             decklistId: true,
+            headCommitId: true,
             workingTree: { select: { id: true } },
             _count: { select: { commits: true } },
           },
@@ -948,6 +952,7 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
             create: {
               id: newCommitId,
               description,
+              parentId: foundDeck.branches[0].headCommitId ?? null,
               changes: {
                 create: changes.map(({ action, board, cardId, count }) => ({
                   action,

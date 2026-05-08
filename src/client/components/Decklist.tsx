@@ -871,7 +871,13 @@ const Decklist = () => {
         branchCommits={commits}
         pendingChanges={pendingChangesList}
         selectedHash={selectedCommit}
-        onSelect={setSelectedCommit}
+        onSelect={(commitId) => {
+          setSelectedCommit(commitId);
+          const node = graphNodes.find(n => n.id === commitId);
+          if (node && node.branchId !== branchId) {
+            navigate(`/deck/${id}/${node.branchId}`);
+          }
+        }}
       />
 
       {/* ── Centre: Deck view ───────────────────────────────────────────────── */}
