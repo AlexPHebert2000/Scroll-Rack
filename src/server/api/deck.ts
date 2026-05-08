@@ -82,7 +82,7 @@ deckRouter.post("/", requireAuth, async (req: Request, res: Response) => {
             create: {
               id: branchId,
               decklist: { create: { id: decklistId } },
-              commits: { create: { id: commitId, description: "INIT", parentId: null } },
+              commits: { create: { id: commitId, description: "INIT" } },
             },
           },
         },
@@ -202,7 +202,7 @@ deckRouter.post("/:id/branch", requireAuth, async (req: Request, res: Response) 
             create: {
               id: seedCommitId,
               description: `Branched from "${sourceDescription}"`,
-              parentId: sourceCommitId,
+              parent: { connect: { id: sourceCommitId } },
               changes: {
                 create: Object.entries(boardCards).flatMap(([board, cards]) =>
                   [...cards.entries()].map(([cardId, count]) => ({
@@ -657,7 +657,7 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
         data: {
           id: newCommitId,
           description,
-          parentId: foundBranch.headCommitId ?? null,
+          ...(foundBranch.headCommitId ? { parent: { connect: { id: foundBranch.headCommitId } } } : {}),
           branch: { connect: { id: branch } },
           changes: {
             create: [
@@ -849,7 +849,7 @@ deckRouter.post("/:id/:branch/import", requireAuth, async (req: Request, res: Re
             create: {
               id: newCommitId,
               description: description?.trim() || 'Import decklist',
-              parentId: foundBranch.headCommitId ?? null,
+              ...(foundBranch.headCommitId ? { parent: { connect: { id: foundBranch.headCommitId } } } : {}),
               changes: {
                 create: changes.map(({ action, board, cardId, count }) => ({
                   action, board, count, card: { connect: { id: cardId } },
@@ -952,7 +952,7 @@ deckRouter.post("/:id/:branch", requireAuth, async (req: Request, res: Response)
             create: {
               id: newCommitId,
               description,
-              parentId: foundDeck.branches[0].headCommitId ?? null,
+              ...(foundDeck.branches[0].headCommitId ? { parent: { connect: { id: foundDeck.branches[0].headCommitId } } } : {}),
               changes: {
                 create: changes.map(({ action, board, cardId, count }) => ({
                   action,
