@@ -6,6 +6,8 @@ const client = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
+if (!client) console.warn('[describeCommit] ANTHROPIC_API_KEY not set — AI descriptions disabled, using fallback');
+
 function primaryType(typeLine?: string): string {
   if (!typeLine) return 'Other';
   const known = ['Creature', 'Instant', 'Sorcery', 'Enchantment', 'Artifact', 'Planeswalker', 'Land', 'Battle'];
