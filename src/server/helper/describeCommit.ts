@@ -71,14 +71,15 @@ export async function describeCommit(
 
   try {
     const message = await client.messages.create({
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 80,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
     return text || generateCommitDescription(changes);
-  } catch {
+  } catch (e) {
+    console.error('[describeCommit] AI call failed, using fallback:', e);
     return generateCommitDescription(changes);
   }
 }
