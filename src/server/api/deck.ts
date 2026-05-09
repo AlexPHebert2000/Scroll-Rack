@@ -4,7 +4,7 @@ import prisma from '../db.js';
 import { randomUUID } from "crypto";
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { generateCommitDescription, type DescriptionChange } from '../helper/commitDescription.js';
+import { generateCommitDescription, type DescriptionChange, type DeckSnapshotCard } from '../helper/commitDescription.js';
 import { describeCommit } from '../helper/describeCommit.js';
 
 const deckRouter = Router();
@@ -556,13 +556,13 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
           include: {
             stagedChanges: {
               include: {
-                card: { select: { id: true, name: true, oracleId: true } },
+                card: { select: { id: true, name: true, oracleId: true, typeLine: true, manaCost: true } },
                 cardArt: { select: { id: true, artCropUrl: true, faces: { select: { name: true, artCropUrl: true }, orderBy: { order: 'asc' } } } },
               },
             },
           },
         },
-        decklist: { include: { deckCards: true } },
+        decklist: { include: { deckCards: { include: { card: { select: { name: true, typeLine: true } } } } } },
         deck: { select: { id: true, portraitUrl: true } },
       },
     });
@@ -614,9 +614,28 @@ deckRouter.post("/:id/:branch/quick-commit", requireAuth, async (req: Request, r
       action: sc.action as 'ADD' | 'REMOVE',
       board: sc.board as 'MAIN' | 'SIDE' | 'COMMANDER' | 'CONSIDERING',
       count: sc.count,
-      card: { name: sc.card.name },
+      card: { name: sc.card.name, typeLine: sc.card.typeLine ?? undefined, manaCost: sc.card.manaCost ?? undefined },
     }));
-    const description = await describeCommit(descChanges);
+
+    // Build card info lookup from staged changes + existing deckCards
+    const cardInfoMap = new Map<string, { name: string; typeLine?: string }>();
+    for (const sc of cardStagedChanges) {
+      cardInfoMap.set(sc.cardId, { name: sc.card.name, typeLine: sc.card.typeLine ?? undefined });
+    }
+    for (const dc of foundBranch.decklist.deckCards) {
+      if (!cardInfoMap.has(dc.cardId)) {
+        cardInfoMap.set(dc.cardId, { name: dc.card.name, typeLine: dc.card.typeLine ?? undefined });
+      }
+    }
+    const deckSnapshot: DeckSnapshotCard[] = [];
+    for (const [board, cards] of Object.entries(boardCards)) {
+      for (const [cardId, count] of cards.entries()) {
+        const info = cardInfoMap.get(cardId);
+        if (info) deckSnapshot.push({ board: board as DeckSnapshotCard['board'], count, name: info.name, typeLine: info.typeLine });
+      }
+    }
+
+    const description = await describeCommit(descChanges, deckSnapshot);
 
     const shouldSnapshot = (foundBranch._count.commits + 1) % 5 === 0;
 

@@ -12,7 +12,14 @@ export interface DescriptionChange {
   action: Action;
   board: Board;
   count: number;
-  card: { name: string };
+  card: { name: string; typeLine?: string; manaCost?: string };
+}
+
+export interface DeckSnapshotCard {
+  board: Board;
+  count: number;
+  name: string;
+  typeLine?: string;
 }
 
 export function generateCommitDescription(changes: DescriptionChange[]): string {
