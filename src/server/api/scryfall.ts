@@ -9,7 +9,6 @@ const scryfallRouter = Router();
 scryfallRouter.get("/search", async (req: Request, res: Response) => {
   try {
     const qString = req.query.qString as string | undefined;
-    console.log(qString)
     if (!qString) {
       res.status(400).json({ error: 'qString query parameter is required' });
       return;
