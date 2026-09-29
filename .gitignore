@@ -23,5 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.wolf
+.claude
+CLAUDE.md
 
 /generated/prisma
+/notes

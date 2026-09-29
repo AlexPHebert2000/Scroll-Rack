@@ -4,89 +4,226 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
+// Scryfall cards — id is the Scryfall UUID (not an ObjectId)
+// imageUrl / artCropUrl live on CardArt, not here
 model Card {
-  id       String     @id
-  name     String
-  imageUrl String?
-  faces    CardFace[]
-  Change   Change[]
-   snapshot SnapShot[] @relation("CardToSnapshot")
+  id            String         @id @map("_id")
+  name          String
+  oracleId      String?
+  typeLine      String?
+  cmc           Float?
+  manaCost      String?
+  colorIdentity String[]
+  oracleText    String?
+  layout        String?
+  faces         CardFace[]
+  changes       Change[]
+  deckCards     DeckCard[]
+  stagedChanges StagedChange[]
+
+  @@index([oracleId])
 }
 
 model CardFace {
-  cardId   String
-  name     String
-  imageUrl String?
-  card     Card    @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  @@id([cardId, name])
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  cardId     String
+  name       String
+  typeLine   String?
+  cmc        Float?
+  oracleText String?
+  layout     String?
+  order      Int     @default(0)
+  card       Card    @relation(fields: [cardId], references: [id])
+
+  @@unique([cardId, name])
+}
+
+// One row per unique piece of art (from Scryfall unique_artwork bulk data).
+// The default printing's CardArt shares its id with the canonical Card record.
+model CardArt {
+  id             String                  @id @map("_id")
+  oracleId       String
+  name           String
+  imageUrl       String?
+  artCropUrl     String?
+  set            String?
+  setName        String?
+  artist         String?
+  faces          CardArtFace[]
+  artPreferences DecklistArtPreference[]
+  changes        Change[]
+  stagedChanges  StagedChange[]
+
+  @@index([oracleId])
+}
+
+model CardArtFace {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  cardArtId  String
+  name       String
+  imageUrl   String?
+  artCropUrl String?
+  order      Int     @default(0)
+  cardArt    CardArt @relation(fields: [cardArtId], references: [id])
+
+  @@unique([cardArtId, name])
 }
 
 model User {
-  name      String
+  email     String    @id @map("_id")
   username  String
-  email     String   @id @unique
+  name      String
   password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   decks     Deck[]
+  sessions  Session[]
 
-  @@index([email])
+  @@index([username])
+}
+
+model Session {
+  id           String        @id @map("_id")
+  userEmail    String
+  createdAt    DateTime      @default(now())
+  lastSeen     DateTime      @default(now())
+  expires      DateTime
+  user         User          @relation(fields: [userEmail], references: [email])
+  workingTrees WorkingTree[]
 }
 
 model Deck {
-  id              String   @id @db.Char(10)
-  name            String
-  userId          String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  description     String?
-  defaultBranchId String  @unique
-  defaultBranch   Branch?  @relation(fields: [defaultBranchId], references: [id], name: "defaultBranch")
-  branches        Branch[] @relation(name: "branches")
-  user            User     @relation(fields: [userId], references: [email], onDelete: Cascade)
+  id          String   @id @map("_id")
+  name        String
+  userEmail   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  description String?
+  portraitUrl String?
+  user        User     @relation(fields: [userEmail], references: [email])
+  branches    Branch[]
+}
 
-  @@index([userId])
+model Decklist {
+  id             String                  @id @map("_id")
+  deckCards      DeckCard[]
+  artPreferences DecklistArtPreference[]
+  branch         Branch?
+  snapShot       SnapShot?
+}
+
+// Per-decklist art override: one row per oracle card whose art differs from the default
+model DecklistArtPreference {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  decklistId String
+  oracleId   String
+  cardArtId  String
+  decklist   Decklist @relation(fields: [decklistId], references: [id], onDelete: Cascade)
+  cardArt    CardArt  @relation(fields: [cardArtId], references: [id])
+
+  @@unique([decklistId, oracleId])
+}
+
+model DeckCard {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  decklistId String
+  cardId     String
+  board      Board
+  count      Int      @default(1)
+  decklist   Decklist @relation(fields: [decklistId], references: [id])
+  card       Card     @relation(fields: [cardId], references: [id])
+
+  @@unique([decklistId, cardId, board])
 }
 
 model Branch {
-  id              String   @id @unique @db.Char(10)
-  name            String
-  defaultBranchOf Deck?    @relation(name: "defaultBranch")
-  headCommitId    String?   @unique 
-  headCommit      Commit?   @relation(fields: [headCommitId], references: [id], name: "HEAD")
-  deckId          String
-  deck            Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade, name: "branches")
-  commits         Commit[]
+  id           String       @id @map("_id")
+  name         String       @default("main")
+  deckId       String
+  deck         Deck         @relation(fields: [deckId], references: [id])
+  decklistId   String       @unique
+  decklist     Decklist     @relation(fields: [decklistId], references: [id])
+  commits      Commit[]
+  headCommitId String?      @unique
+  headCommit   Commit?      @relation(name: "HEAD", fields: [headCommitId], references: [id])
+  workingTree  WorkingTree?
 }
 
 model Commit {
-  id           String   @unique @id @db.Char(10)
+  id           String    @id @map("_id")
   description  String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   branchId     String
+  parentId     String?
   changes      Change[]
-  headBranchOf Branch?  @relation(name: "HEAD")
-  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  headBranchOf Branch?   @relation(name: "HEAD")
+  branch       Branch    @relation(fields: [branchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parent       Commit?   @relation(name: "CommitParent", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children     Commit[]  @relation(name: "CommitParent")
   snapshot     SnapShot?
 }
 
 model SnapShot {
-  id String @db.Char(10) @id
-  commit Commit @relation(fields: [commitID], references: [id])
-  commitID String @unique
-  card Card[] @relation("CardToSnapshot")
+  id         String   @id @map("_id")
+  commitID   String   @unique
+  decklistId String   @unique
+  commit     Commit   @relation(fields: [commitID], references: [id])
+  decklist   Decklist @relation(fields: [decklistId], references: [id])
 }
 
 model Change {
-  action         String
-  commitId       String
-  cardId         String
-  card           Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  commit         Commit @relation(fields: [commitId], references: [id], onDelete: Cascade)
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  action   Action
+  board    Board?
+  commitId String
+  cardId   String
+  count    Int      @default(1)
+  artId    String?
+  commit   Commit   @relation(fields: [commitId], references: [id])
+  card     Card     @relation(fields: [cardId], references: [id])
+  cardArt  CardArt? @relation(fields: [artId], references: [id])
 
-  @@id([action, cardId, commitId])
+  @@unique([action, board, cardId, commitId])
+}
+
+model WorkingTree {
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  branchId       String         @unique
+  lastModifiedAt DateTime       @updatedAt
+  lastSessionId  String?
+  branch         Branch         @relation(fields: [branchId], references: [id])
+  session        Session?       @relation(fields: [lastSessionId], references: [id])
+  stagedChanges  StagedChange[]
+}
+
+model StagedChange {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  action        Action
+  board         Board?
+  cardId        String
+  count         Int         @default(1)
+  artId         String?
+  workingTreeId String      @db.ObjectId
+  workingTree   WorkingTree @relation(fields: [workingTreeId], references: [id], onDelete: Cascade)
+  card          Card        @relation(fields: [cardId], references: [id])
+  cardArt       CardArt?    @relation(fields: [artId], references: [id])
+
+  @@unique([board, cardId, workingTreeId])
+}
+
+enum Action {
+  ADD
+  REMOVE
+  SET_ART
+}
+
+enum Board {
+  MAIN
+  SIDE
+  COMMANDER
+  CONSIDERING
 }

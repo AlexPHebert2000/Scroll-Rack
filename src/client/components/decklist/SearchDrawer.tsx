@@ -1,0 +1,232 @@
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import Box from '@mui/material/Box';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
+import { SR } from '../../theme';
+import type { Card } from '../CardImage';
+import type { BoardKey } from './CardListView';
+import ManaSymbols from './ManaSymbols';
+import SearchResult from './SearchResult';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  currentCards: Card[];
+  commanderCards: Card[];
+  pendingChanges: Map<string, Partial<Record<BoardKey, number>>>;
+  onAdd: (card: Card) => void;
+  onRemove: (id: string) => void;
+  onUndo: (id: string) => void;
+}
+
+const WUBRG = ['W', 'U', 'B', 'R', 'G'];
+
+const SearchDrawer = ({ open, onClose, currentCards, commanderCards, pendingChanges, onAdd, onRemove, onUndo }: Props) => {
+  const [query, setQuery] = useState('');
+  const [activeQuery, setActiveQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'name' | 'cmc' | 'edhrec' | 'released'>('edhrec');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  // Build color identity filter from all commander cards
+  const colorIdentityFilter = useMemo(() => {
+    if (commanderCards.length === 0) return '';
+    const colors = new Set<string>();
+    commanderCards.forEach(c => (c.colorIdentity ?? []).forEach(col => colors.add(col)));
+    const sorted = WUBRG.filter(c => colors.has(c));
+    // colorless commander: identity is empty → restrict to colorless only
+    return `id:${sorted.join('') || 'c'}`;
+  }, [commanderCards]);
+
+  const colorIdentityDisplay = useMemo(() => {
+    if (!colorIdentityFilter) return '';
+    const match = colorIdentityFilter.match(/id:(.+)/);
+    if (!match) return '';
+    const colors = match[1] === 'c' ? [] : match[1].split('');
+    return colors.map(c => `{${c}}`).join('');
+  }, [colorIdentityFilter]);
+
+  const effectiveQuery = [
+    activeQuery,
+    colorIdentityFilter,
+    `order:${sortOrder}`,
+    `dir:${sortDir}`,
+  ].filter(Boolean).join(' ');
+
+  const searchQ = useQuery<Card[]>({
+    queryKey: ['drawerSearch', activeQuery, colorIdentityFilter, sortOrder, sortDir],
+    queryFn: () =>
+      axios.get<Card[]>(`/api/scryfall/search?qString=${encodeURIComponent(effectiveQuery)}`).then(r => r.data),
+    enabled: activeQuery.length > 0,
+  });
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setQuery(val);
+    clearTimeout(debounceRef.current);
+    if (val.trim().length > 1) {
+      debounceRef.current = setTimeout(() => setActiveQuery(val.trim()), 380);
+    } else {
+      setActiveQuery('');
+    }
+  };
+
+  const results = searchQ.data ?? [];
+  const width = 480;
+
+  return (
+    <>
+      <Box sx={{
+        width: open ? width : 0, flexShrink: 0, overflow: 'hidden',
+        borderLeft: open ? `0.5px solid ${SR.border}` : 'none',
+        backgroundColor: SR.surfacePanel,
+        display: 'flex', flexDirection: 'column',
+        transition: 'width 200ms cubic-bezier(0.4,0,0.2,1)',
+      }}>
+        {/* Fixed-width inner so content doesn't wrap during animation */}
+        <Box sx={{ width: width, display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+          {/* Header */}
+          <Box sx={{
+            padding: '12px 14px 10px', borderBottom: `0.5px solid ${SR.border}`,
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.1em', color: SR.textFaint }}>
+              Search cards
+            </Box>
+            <Box
+              component="button"
+              onClick={onClose}
+              sx={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                color: SR.textFaint, display: 'flex', alignItems: 'center', borderRadius: '4px',
+                '&:hover': { color: SR.textPrimary },
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
+              </svg>
+            </Box>
+          </Box>
+
+          {/* Search input */}
+          <Box sx={{ padding: '10px 12px', borderBottom: `0.5px solid ${SR.border}`, flexShrink: 0 }}>
+            <Box
+              component="input"
+              ref={inputRef}
+              value={query}
+              onChange={handleInput}
+              placeholder="Card name or query…"
+              sx={{
+                display: 'block', width: '100%',
+                fontFamily: SR.fontUi, fontSize: 12, color: SR.textPrimary,
+                backgroundColor: SR.surfaceApp, border: `0.5px solid ${SR.border}`,
+                borderRadius: '5px', padding: '6px 10px', outline: 'none',
+                boxSizing: 'border-box',
+                '&:focus': { borderColor: SR.accentTeal },
+              }}
+            />
+
+            {/* Sort + identity row */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mt: '8px' }}>
+              <Box
+                component="select"
+                value={sortOrder}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortOrder(e.target.value as typeof sortOrder)}
+                sx={{
+                  flex: 1, fontFamily: SR.fontUi, fontSize: 11, color: SR.textMuted,
+                  backgroundColor: SR.surfaceApp, border: `0.5px solid ${SR.border}`,
+                  borderRadius: '5px', padding: '4px 8px', outline: 'none',
+                  cursor: 'pointer', appearance: 'none',
+                  '&:focus': { borderColor: SR.accentTeal },
+                }}
+              >
+                <option value="edhrec">EDHREC rank</option>
+                <option value="name">Name</option>
+                <option value="cmc">CMC</option>
+                <option value="released">Release date</option>
+              </Box>
+              <Box
+                component="button"
+                onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                sx={{
+                  flexShrink: 0, width: 30, height: 26,
+                  fontFamily: SR.fontMono, fontSize: 14, lineHeight: 1,
+                  backgroundColor: SR.surfaceApp, border: `0.5px solid ${SR.border}`,
+                  borderRadius: '5px', cursor: 'pointer', color: SR.textMuted,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'border-color 80ms, color 80ms',
+                  '&:hover': { borderColor: SR.textMuted, color: SR.textPrimary },
+                }}
+              >
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </Box>
+              {colorIdentityFilter && (
+                <>
+                  <Box sx={{ width: '0.5px', alignSelf: 'stretch', backgroundColor: SR.border, mx: '4px', flexShrink: 0 }} />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                    <Box sx={{ fontFamily: SR.fontUi, fontSize: 10, color: SR.textFaint }}>identity</Box>
+                    {colorIdentityDisplay
+                      ? <ManaSymbols cost={colorIdentityDisplay} size={12} />
+                      : <Box sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.textFaint }}>C</Box>
+                    }
+                  </Box>
+                </>
+              )}
+            </Box>
+
+            {activeQuery && !searchQ.isFetching && results.length > 0 && (
+              <Box sx={{ fontFamily: SR.fontMono, fontSize: 10, color: SR.textFaint, mt: '4px' }}>
+                {results.length} results
+              </Box>
+            )}
+          </Box>
+
+          {/* Results */}
+          <Box sx={{ flex: 1, overflowY: 'auto' }}>
+            {searchQ.isFetching && (
+              <Box sx={{ padding: '20px 14px', fontFamily: SR.fontMono, fontSize: 11, color: SR.textFaint }}>
+                Searching…
+              </Box>
+            )}
+            {!searchQ.isFetching && activeQuery && results.length === 0 && (
+              <Box sx={{ padding: '20px 14px', fontFamily: SR.fontUi, fontSize: 12, color: SR.textFaint }}>
+                No results for "{activeQuery}"
+              </Box>
+            )}
+            {!searchQ.isFetching && !activeQuery && (
+              <Box sx={{ padding: '20px 14px' }}>
+                <Box sx={{ fontFamily: SR.fontUi, fontSize: 11, color: SR.textFaint, lineHeight: 1.7 }}>
+                  Search by name, type, or Scryfall syntax —{' '}
+                  <Box component="span" sx={{ fontFamily: SR.fontMono, color: SR.textMuted }}>t:creature c:g</Box>
+                </Box>
+              </Box>
+            )}
+            {results.map(card => {
+              const committed = currentCards.filter(c => c.id === card.id).length;
+              const effectiveCount = committed + (pendingChanges.get(card.id)?.MAIN ?? 0);
+              return (
+                <SearchResult
+                  key={card.id}
+                  card={card}
+                  effectiveCount={effectiveCount}
+                  onAdd={() => onAdd(card)}
+                  onRemove={() => onRemove(card.id)}
+                />
+              );
+            })}
+          </Box>
+        </Box>
+      </Box>
+
+    </>
+  );
+};
+
+export default SearchDrawer;

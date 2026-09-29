@@ -1,36 +1,171 @@
-import {Router} from "express";
-import type {Request, Response} from "express";
-import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcrypt";
+import { Router } from "express";
+import type { Request, Response } from "express";
+import prisma from '../db.js';
+import bcrypt from 'bcrypt';
+import { randomUUID } from "crypto";
+import { z } from 'zod';
+
+const registerSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/, 'Username may only contain letters, numbers, and underscores'),
+  password: z.string().min(8),
+});
+
+const loginSchema = z.object({
+  identifier: z.string().min(1),
+  password: z.string().min(1),
+});
 
 const userRouter = Router();
 
-userRouter.post("/create", async (req: Request, res: Response) => {
-  try{
-    const prisma = new PrismaClient();
-    const {name, username, email, password} = req.body;
-    if (!username || !email || !password) {
-      res.status(400).json({error: "Username, email, and password are required"});
-      return;
-    }
+userRouter.post("/", async (req: Request, res: Response) => {
+  const parsed = registerSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { name, email, username, password } = parsed.data;
+
+  try {
+    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingEmail) { res.status(409).json({ error: `Email ${email} already in use` }); return; }
+
+    const existingUsername = await prisma.user.findUnique({ where: { username, email } });
+    if (existingUsername) { res.status(409).json({ error: `Username ${username} already taken` }); return; }
+
     await prisma.user.create({
+      data: { username, email, name, password: await bcrypt.hash(password, 10) },
+    });
+
+    res.sendStatus(201);
+  } catch (e: any) {
+    console.log(`Error creating user : ${e.message}`);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+})
+
+userRouter.post("/login", async (req: Request, res: Response) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { identifier, password } = parsed.data;
+  try {
+    const isEmail = identifier.includes('@');
+    const user = await prisma.user.findFirst({
+      where: isEmail ? { email: identifier } : { username: identifier },
+    });
+
+    if (!user){throw new Error("User not found")}
+
+    if (!await bcrypt.compare(password, user.password)){ throw new Error("Incorrect Password") }
+
+    const cookieId = randomUUID();
+    const expires = new Date(Date.now());
+    expires.setDate(expires.getDate() + 7);
+
+    await prisma.session.create({
       data: {
-        name,
-        username,
-        email,
-        password: await bcrypt.hash(password, 10),
-      },
+        id: cookieId,
+        user: {connect: {email: user.email}},
+        expires
+      }
     })
-    res.sendStatus(201)
-  } catch (error) {
-    console.error("Error creating user:", error);
-    if (error.code === 'P2002'){
-      res.status(409).json({error: `${req.body.email} already exists`})
+
+    res.cookie("scroll-rack-session", cookieId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      expires
+    })
+
+    res.sendStatus(200);
+  }
+  catch(e :any){
+    console.log(`Failed to log in user : ${e.message}`);
+    res.sendStatus(e.message === "User not found" || e.message === "Incorrect Password" ? 401 : 500);
+  }
+})
+
+userRouter.get("/me", async (req: Request, res: Response) => {
+  const sessionId = req.cookies['scroll-rack-session'];
+  if (!sessionId) { res.sendStatus(401); return; }
+
+  try {
+    const session = await prisma.session.findUniqueOrThrow({
+      where: {id: sessionId},
+      select: {
+        id : true,
+        expires: true,
+        user: {
+          select: {
+            username: true,
+            decks: {
+              select:{
+                name: true,
+                id: true,
+                branches:{
+                  where: {
+                    name: 'main'
+                  },
+                  select:{
+                    id: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (session.expires < new Date()) {
+      res.sendStatus(401); return;
+    }
+
+    const { expires, ...sessionData } = session;
+    res.send(sessionData);
+  }
+  catch(e :any){
+    console.log(`Failed to find user from session : ${e.message}`);
+    res.sendStatus(e.code === 'P2025' ? 401 : 500);
+  }
+})
+
+userRouter.post("/logout", async (req: Request, res: Response) => {
+  const sessionId = req.cookies['scroll-rack-session'];
+  if (sessionId) {
+    await prisma.session.deleteMany({ where: { id: sessionId } }).catch(() => {});
+  }
+  res.clearCookie('scroll-rack-session');
+  res.sendStatus(200);
+});
+
+userRouter.get("/profile/:username", async (req : Request, res : Response) => {
+  const {username} = req.params;
+  try {
+    const profile = await prisma.user.findFirstOrThrow({
+      where:{ username },
+      omit:{
+        password: true,
+        updatedAt: true,
+      },
+      include: {
+        decks: {select:{
+          name: true,
+          id: true
+        }}
+      }
+    });
+    res.send(profile);
+  }
+  catch(e :any){
+    console.log(`Failed to get ${username} profile : ${e.message}`);
+    if (e.code === 'P2025'){
+      res.status(404).json({error : `User ${username} not found`})
     }
     else {
-      res.status(500).json({error: "Internal server error"});
+      res.status(500).json({error : `Failed to get ${username} profile`});
     }
   }
-});
+})
 
 export default userRouter;

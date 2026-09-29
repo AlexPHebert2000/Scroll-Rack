@@ -6,33 +6,57 @@
   "scripts": {
     "dev": "nodemon -w src/server -x tsx src/server/main.ts",
     "start": "cross-env NODE_ENV=production tsx src/server/main.ts",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.10",
+    "@mui/material": "^7.3.2",
+    "@prisma/client": "^6.19.3",
+    "@tanstack/react-query": "^5.90.1",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
+    "cookie-parser": "^1.4.7",
     "cross-env": "^7.0.3",
     "express": "^5.1.0",
-    "nanoid": "^5.1.6",
+    "js-cookie": "^3.0.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.9.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
-    "vite-express": "*"
+    "vite-express": "*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@prisma/client": "^6.18.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^22.15.2",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-react": "^4.4.1",
-    "i": "^0.3.7",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.1.10",
-    "npm": "^11.6.2",
-    "prisma": "^6.18.0",
+    "prisma": "^6.19.3",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.9",
     "vite": "^6.3.3"
   }
 }
