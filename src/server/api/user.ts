@@ -18,6 +18,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+//Schema for PATCH /username
+const changeUsernameSchema = z.object({
+  newUsername: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/, 'Username may only contain letters, numbers, and underscores'),
+});
+
 // Schema for PATCH /password
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
@@ -185,6 +190,42 @@ userRouter.patch("/password", requireAuth, async (req: Request, res: Response) =
     console.log(`Failed to change password : ${e.message}`);
     // respond with 500
     res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+// PATCH /username
+/**
+ * Allows authenticated user to change their username if the username is not already taken
+ * request: {newUsername}
+ * response:
+ * 400: if request body is poorly formed
+ * 409: if username is already taken
+ * 200: if successful
+ * 500: other
+ */
+userRouter.patch("/username", requireAuth, async (req: Request, res: Response) => {
+  // verify request body is properly formed
+  const parsed = changeUsernameSchema.safeParse(req.body);
+  // respond with 400 if not
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { newUsername } = parsed.data;
+
+  try {
+    // Look for user with the requested username
+    const existing = await prisma.user.findFirst({ where: { username: newUsername } });
+    // respond 409 if username is already taken
+    if (existing) { res.status(409).json({ error: `Username ${newUsername} already taken` }); return; }
+    //update user to new username
+    await prisma.user.update({
+      where: { email: req.userEmail },
+      data: { username: newUsername },
+    });
+    // send success code
+    res.sendStatus(200);
+    // catch any other errors with 500 code
+  } catch (e: any) {
+    console.log(`Failed to change username : ${e.message}`);
+    res.status(500).json({ error: 'Failed to change username' });
   }
 });
 
