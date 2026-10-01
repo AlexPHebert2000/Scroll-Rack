@@ -11,6 +11,8 @@ jest.mock('../db', () => ({
       findFirst: jest.fn(),
       create: jest.fn(),
       findFirstOrThrow: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      update: jest.fn()
     },
     session: {
       findUniqueOrThrow: jest.fn(),
@@ -25,7 +27,7 @@ jest.mock('bcrypt', () => ({
 }));
 
 const db = prisma as {
-  user: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; findFirstOrThrow: jest.Mock };
+  user: { findUnique: jest.Mock; findFirst: jest.Mock; create: jest.Mock; findFirstOrThrow: jest.Mock, findUniqueOrThrow: jest.Mock, update: jest.Mock };
   session: { findUniqueOrThrow: jest.Mock; create: jest.Mock };
 };
 
@@ -240,5 +242,64 @@ describe('GET /api/user/profile/:username', () => {
     const res = await request(app).get('/api/user/profile/nobody');
 
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/user/password
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/user/password', () => {
+  const validSession = () => {
+    db.session.findUniqueOrThrow.mockResolvedValueOnce({
+      expires: new Date(Date.now() + 86400000),
+      userEmail: 'test@test.com',
+    });
+  };
+
+  it('returns 200 when successful', async () => {
+    validSession();
+    db.user.findUniqueOrThrow.mockResolvedValueOnce({ email: 'test@test.com', password: 'hashed' });
+    (bcrypt.compare as jest.Mock).mockResolvedValueOnce(true);
+    db.user.update.mockResolvedValueOnce({});
+
+    const res = await request(app)
+      .patch('/api/user/password')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ currentPassword: 'oldpass', newPassword: 'newpassword123' });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 401 when current password is wrong', async () => {
+    validSession();
+    db.user.findUniqueOrThrow.mockResolvedValueOnce({ email: 'test@test.com', password: 'hashed' });
+    (bcrypt.compare as jest.Mock).mockResolvedValueOnce(false);
+
+    const res = await request(app)
+      .patch('/api/user/password')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ currentPassword: 'wrongpass', newPassword: 'newpassword123' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when new password is too short', async () => {
+    validSession();
+
+    const res = await request(app)
+      .patch('/api/user/password')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ currentPassword: 'oldpass', newPassword: 'short' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 when no session cookie is present', async () => {
+    const res = await request(app)
+      .patch('/api/user/password')
+      .send({ currentPassword: 'oldpass', newPassword: 'newpassword123' });
+
+    expect(res.status).toBe(401);
   });
 });

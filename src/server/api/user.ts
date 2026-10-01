@@ -4,6 +4,7 @@ import prisma from '../db.js';
 import bcrypt from 'bcrypt';
 import { randomUUID } from "crypto";
 import { z } from 'zod';
+import { requireAuth } from '../middleware/auth.js';
 
 const registerSchema = z.object({
   name: z.string().min(1),
@@ -15,6 +16,12 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   identifier: z.string().min(1),
   password: z.string().min(1),
+});
+
+// Schema for PATCH /password
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
 });
 
 const userRouter = Router();
@@ -137,6 +144,48 @@ userRouter.post("/logout", async (req: Request, res: Response) => {
   }
   res.clearCookie('scroll-rack-session');
   res.sendStatus(200);
+});
+
+// PATCH /password
+/**
+ * Allows authenticated user to change their password
+ * req: {currentPassword, newPassword}
+ * response:
+ *  400: request does not match changePassWordSchema
+ *  401: Incorrect current password
+ *  200: Success
+ *  500: Other
+ */
+userRouter.patch("/password", requireAuth, async (req: Request, res: Response) => {
+  // check request against changePasswordSchema
+  const parsed = changePasswordSchema.safeParse(req.body);
+  // if not correct, throw 400 status
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+
+  const { currentPassword, newPassword } = parsed.data;
+
+  try {
+    // find user from email
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: req.userEmail } });
+    // validate user provided correct current password
+    if (!await bcrypt.compare(currentPassword, user.password)) {
+      // If currentPassword is incorrect, respond 401
+      res.status(401).json({ error: 'Incorrect password' }); return;
+    }
+    // update the user password
+    await prisma.user.update({
+      where: { email: req.userEmail },
+      data: { password: await bcrypt.hash(newPassword, 10) },
+    });
+    // send success
+    res.sendStatus(200);
+    // catch other errors
+  } catch (e: any) {
+    // log error
+    console.log(`Failed to change password : ${e.message}`);
+    // respond with 500
+    res.status(500).json({ error: 'Failed to change password' });
+  }
 });
 
 userRouter.get("/profile/:username", async (req : Request, res : Response) => {
