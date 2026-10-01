@@ -303,3 +303,71 @@ describe('PATCH /api/user/password', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PATCH /api/user/username
+// ---------------------------------------------------------------------------
+
+describe('PATCH /api/user/username', () => {
+  const validSession = () => {
+    db.session.findUniqueOrThrow.mockResolvedValueOnce({
+      expires: new Date(Date.now() + 86400000),
+      userEmail: 'test@test.com',
+    });
+  };
+
+  it('returns 200 on success', async () => {
+    validSession();
+    db.user.findFirst.mockResolvedValueOnce(null);
+    db.user.update.mockResolvedValueOnce({});
+
+    const res = await request(app)
+      .patch('/api/user/username')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ newUsername: 'newname123' });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 409 when username is already taken', async () => {
+    validSession();
+    db.user.findFirst.mockResolvedValueOnce({ username: 'newname123' });
+
+    const res = await request(app)
+      .patch('/api/user/username')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ newUsername: 'newname123' });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 400 when username is too short', async () => {
+    validSession();
+
+    const res = await request(app)
+      .patch('/api/user/username')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ newUsername: 'ab' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when username contains invalid characters', async () => {
+    validSession();
+
+    const res = await request(app)
+      .patch('/api/user/username')
+      .set('Cookie', 'scroll-rack-session=session-id')
+      .send({ newUsername: 'bad username!' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 when no session cookie is present', async () => {
+    const res = await request(app)
+      .patch('/api/user/username')
+      .send({ newUsername: 'newname123' });
+
+    expect(res.status).toBe(401);
+  });
+});
