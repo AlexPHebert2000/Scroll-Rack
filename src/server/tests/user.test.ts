@@ -172,9 +172,11 @@ describe('POST /api/user/login', () => {
 describe('GET /api/user/me', () => {
   it('returns 200 with user data for a valid session', async () => {
     db.session.findUniqueOrThrow.mockResolvedValueOnce({
-      id: 'session-id',
       expires: new Date(Date.now() + 86400000),
-      user: { username: 'testuser', decks: [] },
+      userEmail: 'test@test.com',
+    });
+    db.user.findUniqueOrThrow.mockResolvedValueOnce({
+      username: 'testuser', decks: [],
     });
 
     const res = await request(app)
