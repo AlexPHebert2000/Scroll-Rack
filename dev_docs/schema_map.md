@@ -1,1 +1,0 @@
-![schema map](image-1.png)
