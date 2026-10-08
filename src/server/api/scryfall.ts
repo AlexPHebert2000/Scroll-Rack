@@ -56,26 +56,13 @@ scryfallRouter.get("/search", async (req: Request, res: Response) => {
   }
 });
 
-// Register /download/arts BEFORE /download so Express doesn't swallow it
-scryfallRouter.post("/download/arts", async (req: Request, res: Response) => {
-  if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET) {
-    res.sendStatus(403); return;
-  }
-  try {
-    await scryfallArtsDownload();
-    res.sendStatus(200);
-  } catch (e: any) {
-    console.error("Arts download failed:", e.message);
-    res.status(500).json({ error: "Arts download failed" });
-  }
-});
-
 scryfallRouter.post("/download", async (req: Request, res: Response) => {
   if (req.headers['x-admin-secret'] !== process.env.ADMIN_SECRET) {
     res.sendStatus(403); return;
   }
   try {
     await scryfallDownload();
+    await scryfallArtsDownload();
     res.sendStatus(200);
   } catch (e: any) {
     console.error("Download failed:", e.message);
