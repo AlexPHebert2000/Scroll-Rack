@@ -97,31 +97,22 @@ userRouter.post("/login", async (req: Request, res: Response) => {
   }
 })
 
-userRouter.get("/me", async (req: Request, res: Response) => {
-  const sessionId = req.cookies['scroll-rack-session'];
-  if (!sessionId) { res.sendStatus(401); return; }
-
+userRouter.get("/me", requireAuth, async (req: Request, res: Response) => {
   try {
-    const session = await prisma.session.findUniqueOrThrow({
-      where: {id: sessionId},
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email: req.userEmail },
       select: {
-        id : true,
-        expires: true,
-        user: {
+        username: true,
+        decks: {
           select: {
-            username: true,
-            decks: {
-              select:{
-                name: true,
-                id: true,
-                branches:{
-                  where: {
-                    name: 'main'
-                  },
-                  select:{
-                    id: true
-                  }
-                }
+            name: true,
+            id: true,
+            branches: {
+              where: {
+                name: 'main'
+              },
+              select: {
+                id: true
               }
             }
           }
@@ -129,16 +120,11 @@ userRouter.get("/me", async (req: Request, res: Response) => {
       }
     });
 
-    if (session.expires < new Date()) {
-      res.sendStatus(401); return;
-    }
-
-    const { expires, ...sessionData } = session;
-    res.send(sessionData);
+    res.send({ user });
   }
   catch(e :any){
     console.log(`Failed to find user from session : ${e.message}`);
-    res.sendStatus(e.code === 'P2025' ? 401 : 500);
+    res.sendStatus(500);
   }
 })
 
